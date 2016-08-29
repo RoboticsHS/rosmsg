@@ -1,118 +1,95 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, TupleSections #-}
 -- |Parser components for the ROS message description language (@msg@
 -- files). See http://wiki.ros.org/msg for reference.
-module Robotics.ROS.Msg.Parser (parseMsg, parseSrv, simpleFieldAssoc) where
+module Robotics.ROS.Msg.Parser (msgParser, parse) where
 
-import Prelude hiding (takeWhile, drop)
-import Control.Arrow ((&&&))
-import Data.Attoparsec.Text.Lazy
 import qualified Data.Text as T
-import Data.Text
-
-import System.FilePath (dropExtension, takeFileName, splitDirectories)
+import Data.Text (Text, pack, toLower)
+import Data.Char (isDigit, isAlpha, isSpace)
+import Data.Scientific (toBoundedInteger)
+import Data.Attoparsec.Text.Lazy
+import Data.Foldable (foldl')
+import Control.Arrow ((&&&))
+import Data.Either (rights)
 
 import Robotics.ROS.Msg.Types
 
-simpleFieldAssoc :: [(FieldType, Text)]
-simpleFieldAssoc = fmap (id &&& fieldTypeName) fieldTypes 
-  where fieldTypes = enumFormTo F_Bool F_Duration
-        fieldTypeName = toLower . drop 2 . pack . show) 
+type FieldName = Text
 
-eatLine :: Parser ()
-eatLine = manyTill anyChar (eitherP endOfLine endOfInput) *> skipSpace
+showType :: Show a => a -> Text
+showType = toLower . T.drop 1 . pack . show
 
-parseName :: Parser Text
-parseName = skipSpace *> identifier <* eatLine <* try comment
+simpleAssoc :: [(SimpleType, Text)]
+simpleAssoc = (id &&& showType) <$> enumFrom RBool
+
+takeLine :: Parser Text
+takeLine = pack <$> manyTill anyChar (eitherP endOfLine endOfInput)
 
 identifier :: Parser Text
-identifier = B.cons <$> letter_ascii <*> takeWhile validChar
-    where validChar c = any ($ c) [isDigit, isAlpha_ascii, (== '_'), (== '/')]
+identifier = takeWhile1 validChar
+  where validChar c = any ($ c) [isDigit, isAlpha, (== '_'), (== '/')]
 
-parseInt :: Parser Int
-parseInt = foldl' (\s x -> s*10 + digitToInt x) 0 <$> many1 digit
+comment :: Parser ()
+comment = skipSpace *> char '#' *> takeLine *> pure ()
 
-comment :: Parser [()]
-comment = many $ skipSpace *> try (char '#' *> eatLine)
+-- |Parse fields defined in the message
+fieldParser :: Parser MsgField
+fieldParser = do
+    typeIdent <- choice [simpleField, customField] 
+    mkField   <- choice [plain, array, fixedArray]
+    return $ uncurry Variable (mkField typeIdent)
+  where
+    simpleField = Simple . fst <$> choice (mapM string <$> simpleAssoc)
 
-simpleParser :: (MsgType, ByteString) -> Parser (ByteString, MsgType)
-simpleParser (t,b) = (, t) <$> (string b *> space *> parseName)
+    customField = Custom <$> identifier
 
-fixedArrayParser :: (MsgType, ByteString) -> Parser (ByteString, MsgType)
-fixedArrayParser (t,b) = (\len name -> (name, RFixedArray len t)) <$>
-                         (string b *> char '[' *> parseInt <* char ']') <*> 
-                         (space *> parseName)
+    plain = do
+        name <- space *> skipSpace *> identifier <* takeLine
+        return $ (name,)
 
-varArrayParser :: (MsgType, ByteString) -> Parser (ByteString, MsgType)
-varArrayParser (t,b) = (, RVarArray t) <$> 
-                       (string b *> string "[]" *> space *> parseName)
+    array = do
+        name <- skipSpace *> string "[]" *> skipSpace *> identifier <* takeLine
+        return $ (name,) . Array
 
-userTypeParser :: Parser (ByteString, MsgType)
-userTypeParser = choice [userSimple, userVarArray, userFixedArray]
+    fixedArray = do
+        len <- skipSpace *> char '[' *> decimal <* char ']'
+        name <- skipSpace *> identifier <* takeLine
+        return $ (name,) . FixedArray len 
 
-userSimple :: Parser (ByteString, MsgType)
-userSimple = (\t name -> (name, RUserType t)) <$>
-             identifier <*> (space *> parseName)
-
-userVarArray :: Parser (ByteString, MsgType)
-userVarArray = (\t name -> (name, RVarArray (RUserType t))) <$>
-               identifier <*> (string "[]" *> space *> parseName)
-
-userFixedArray :: Parser (ByteString, MsgType)
-userFixedArray = (\t n name -> (name, RFixedArray n (RUserType t))) <$>
-                 identifier <*> 
-                 (char '[' *> parseInt <* char ']') <*> 
-                 (space *> parseName)
-
--- Parse constants defined in the message
-constParser :: ByteString -> MsgType -> 
-               Parser (ByteString, MsgType, ByteString)
-constParser s x = (,x,) <$> 
-                  (string s *> space *> identifier) <*> 
-                  (skipSpace *> char '=' *> skipSpace *> restOfLine <* skipSpace)
-    where restOfLine :: Parser ByteString
-          restOfLine = pack <$> manyTill anyChar (eitherP endOfLine endOfInput)
-
-constParsers :: [Parser (ByteString, MsgType, ByteString)]
-constParsers = map (uncurry constParser . swap) simpleFieldAssoc
-  where swap (x,y) = (y,x)
+-- |Parse constants defined in the message
+constParser :: Parser MsgField
+constParser = choice (go <$> enumFrom RBool)
+  where
+    go t = do
+        name <- string (showType t) *> skipSpace *> identifier <* space
+        value <- skipSpace *> char '=' *> skipSpace *> takeLine
+        return (Constant name t value) 
 
 -- String constants are parsed somewhat differently from numeric
 -- constants. For numerical constants, we drop comments and trailing
 -- spaces. For strings, we take the whole line (so comments aren't
 -- stripped).
-sanitizeConstants :: (a, MsgType, ByteString) -> (a, MsgType, ByteString)
-sanitizeConstants c@(_, RString, _) = c
-sanitizeConstants (name, t, val) = 
-    (name, t, B.takeWhile (\c -> c /= '#' && not (isSpace c)) val)
-
--- Parsers fields and constants.
-fieldParsers :: [Parser (Either (ByteString, MsgType) 
-                                (ByteString, MsgType, ByteString))]
-fieldParsers = map (comment *>) $
-               map (Right . sanitizeConstants <$>) constParsers ++ 
-               map (Left <$>) (builtIns ++ [userTypeParser])
-    where builtIns = concatMap (`map` simpleFieldAssoc)
-                               [simpleParser, fixedArrayParser, varArrayParser]
-
-mkParser :: MsgName -> String -> ByteString -> Parser Msg
-mkParser sname lname txt = aux . partitionEithers <$> many (choice fieldParsers)
-  where aux (fs, cs) = Msg sname lname txt
-                           (map buildField fs)
-                           (map buildConst cs)
-
-buildField :: (ByteString, MsgType) -> MsgField
-buildField (name,typ) = MsgField fname typ name
-  where fname = B.append "_" $ sanitize name
-
-buildConst :: (ByteString, MsgType, ByteString) -> MsgConst
-buildConst (name,typ,val) = MsgConst fname typ val name
-  where fname = B.map toLower $ sanitize name
+sanitizeField :: MsgField -> MsgField
+sanitizeField field = case field of
+    Variable name t -> Variable (sanitize name) t
+    Constant name RString v -> Constant (sanitize name) RString v
+    Constant name t val     -> Constant (sanitize name) t $
+        T.takeWhile (\c -> c /= '#' && not (isSpace c)) val
 
 -- |Ensure that field and constant names are valid Haskell identifiers
 -- and do not coincide with Haskell reserved words.
-sanitize :: ByteString -> ByteString
-sanitize "data" = "_data"
-sanitize "type" = "_type"
-sanitize "class" = "_class"
-sanitize "module" = "_module"
-sanitize x = B.cons (toLower (B.head x)) (B.tail x)
+sanitize :: Text -> Text
+sanitize "data"    = "_data"
+sanitize "type"    = "_type"
+sanitize "class"   = "_class"
+sanitize "module"  = "_module"
+sanitize "newtype" = "_newtype"
+sanitize x = toLower x 
+
+-- |ROS message fields parser
+msgParser :: Parser [MsgField]
+msgParser = do
+    fields <- many1 $ eitherP thrash field
+    return (sanitizeField <$> rights fields)
+  where field  = choice [constParser, fieldParser]
+        thrash = choice [comment, endOfLine]
