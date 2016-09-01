@@ -1,15 +1,16 @@
 module Robotics.ROS.Msg.Types
-  ( MsgDefinition(..)
+  ( FieldDefinition(..)
   , SimpleType(..)
   , FieldType(..)
-  , MsgField(..)
+  , MsgDefinition
   , ROSDuration
+  , FieldName
   , ROSTime
+  , Field
   ) where
 
-import Data.Text (Text)
 import Data.Word (Word32)
-import Data.Digest.Pure.MD5 (MD5Digest)
+import Data.Text (Text)
 
 -- |A variant type describing the simple types 
 -- that may be included in a ROS message.
@@ -30,7 +31,7 @@ data SimpleType
   | RString
   | RTime
   | RDuration
-  deriving (Show, Enum, Eq, Ord)
+  deriving (Show, Enum, Eq)
 
 -- |A variant type describing the types that may be included in a ROS
 -- message.
@@ -39,24 +40,24 @@ data FieldType
   | Custom Text
   | Array FieldType
   | FixedArray Int FieldType
-  deriving (Show, Eq, Ord)
+  deriving (Show, Eq)
 
--- |Message field type
-data MsgField
-  = Variable Text FieldType
+-- |Field name is text encoded
+type FieldName = Text
+
+-- |Field is a pair of name - value
+type Field = (FieldName, FieldType)
+
+-- |ROS message field is a variable or constant declaration
+data FieldDefinition
+  = Variable Field
   -- ^ Variable field name and type
-  | Constant Text SimpleType Text 
+  | Constant Field Text 
   -- ^ Constant field name, type and value
-  deriving (Show, Eq, Ord)
+  deriving (Show, Eq)
 
--- |A message definition has a name, type, package and a list of
--- named, typed fields.
-data MsgDefinition = MsgDefinition
-  { msgName    :: Text
-  , msgPackage :: Text
-  , msgSource  :: Text
-  , msgFields  :: [MsgField]
-  } deriving (Show, Eq, Ord)
+-- |ROS message is a list of fields
+type MsgDefinition = [FieldDefinition]
 
 -- |ROSDuration is a tuple of (seconds, nanoseconds)
 type ROSDuration = (Word32, Word32)
