@@ -1,6 +1,5 @@
 module Robotics.ROS.Msg
   ( module Robotics.ROS.Msg.ROSArray
-  , module Lens.Simple
   , Message(..)
   , Stamped(..)
   , ROSDuration
@@ -11,7 +10,6 @@ import Data.Digest.Pure.MD5 (MD5Digest)
 import Data.Binary (Binary)
 import Data.Word (Word32)
 import Data.Text (Text)
-import Lens.Simple
 
 import Robotics.ROS.Msg.ROSArray
 import Robotics.ROS.Msg.Types

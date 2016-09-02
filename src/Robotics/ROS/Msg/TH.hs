@@ -5,15 +5,17 @@ module Robotics.ROS.Msg.TH
   ) where
 
 import Data.Attoparsec.Text.Lazy (Result(..))
+import Data.Text.Lazy.Builder (toLazyText)
 import Data.Char (isAlphaNum, toLower)
+import Data.Text.Lazy (pack, unpack)
 import qualified Data.Text as T
 import Language.Haskell.TH.Quote
 import Language.Haskell.TH
-import Data.Text.Lazy (pack)
 import Data.Maybe (catMaybes)
 import Data.List (groupBy)
 
 import qualified Robotics.ROS.Msg.Parser as P
+import Robotics.ROS.Msg.Render
 import Robotics.ROS.Msg.Types
 
 rosmsgFrom :: QuasiQuoter
@@ -33,6 +35,24 @@ typeQ (Custom t)       = conT $ mkName $ T.unpack t
 typeQ (Array t)        = appT (conT $ mkName "ROSArray") (typeQ t)
 typeQ (FixedArray l t) = appT (appT (conT $ mkName "ROSFixedArray") (typeQ t))
                               (litT $ numTyLit $ fromIntegral l)
+
+-- Ensure that field and constant names are valid Haskell identifiers
+-- and do not coincide with Haskell reserved words.
+sanitizeField :: FieldDefinition -> FieldDefinition
+sanitizeField = \case
+    Constant (a, b) c -> Constant (sanitize a, b) c
+    Variable (a, b)   -> Variable (sanitize a, b) 
+  where sanitize x | isKeyword x = T.cons '_' x
+                   | otherwise   = x
+        isKeyword = flip elem [ "as", "case", "of", "class"
+                              , "data", "family", "instance"
+                              , "default", "deriving", "do"
+                              , "forall", "foreign", "hiding"
+                              , "if", "then", "else", "import"
+                              , "infix", "infixl", "infixr"
+                              , "let", "in", "mdo", "module"
+                              , "newtype", "proc", "qualified"
+                              , "rec", "type", "where"]
 
 -- Generate the name of the Haskell type that corresponds to a flat
 -- (i.e. non-array) ROS type.
@@ -62,10 +82,11 @@ fieldQ (Variable (name, typ)) = Just $ varStrictType recName recType
         recType = strictType notStrict (typeQ typ)
 
 -- Generate the getDigest Message class implementation 
-getDigest :: String -> DecQ
-getDigest src = funD (mkName "getDigest") [digest]
+getDigest :: MsgDefinition -> DecQ
+getDigest msg = funD (mkName "getDigest") [digest]
   where
     digest = clause [wildP] (normalB (appE md5 (stringE src))) []
+    src    = unpack $ toLazyText $ render msg
     md5    = varE (mkName "md5")
 
 -- Generate the getType Message class implementation 
@@ -117,15 +138,16 @@ quoteMsgDec :: String -> Q [Dec]
 quoteMsgDec txt = do
     l_mod <- loc_module <$> location
     let dataName    = mkDataName l_mod
-        recordList  = catMaybes (fieldQ <$> msg)
+        fields      = sanitizeField <$> msg
+        recordList  = catMaybes (fieldQ <$> fields)
         dataRecords = recC dataName recordList
 
-    lenses      <- sequence (concat (deriveLens dataName <$> msg))
+    lenses      <- sequence (concat (deriveLens dataName <$> fields))
 
     msgData     <- dataD (cxt []) dataName [] [dataRecords] derivingD
     binInstance <- instanceD' dataName binaryC []
     defInstance <- instanceD' dataName defaultC [defFun dataName recordList] 
-    msgInstance <- instanceD' dataName messageC [getDigest txt, getType l_mod]
+    msgInstance <- instanceD' dataName messageC [getDigest msg, getType l_mod]
 
     return $ [ msgData
              , binInstance

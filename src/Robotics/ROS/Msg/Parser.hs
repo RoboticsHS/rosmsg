@@ -1,11 +1,15 @@
 -- |Parser components for the ROS message description language (@msg@
 -- files). See http://wiki.ros.org/msg for reference.
-module Robotics.ROS.Msg.Parser (parse, rosmsg) where
+module Robotics.ROS.Msg.Parser
+  ( Result(..)
+  , parse
+  , rosmsg
+  ) where
 
-import Data.Char (isDigit, isAlpha, isSpace)
 import Data.Text (Text, pack, toLower)
-import qualified Data.Text as T
+import Data.Char (isDigit, isAlpha)
 import Data.Attoparsec.Text.Lazy
+import qualified Data.Text as T
 import Control.Arrow ((&&&))
 import Data.Either (rights)
 
@@ -63,33 +67,17 @@ constantParser = choice (go <$> enumFrom RBool)
     go t = do
         name <- string (showType t) *> skipSpace *> identifier <* space
         value <- skipSpace *> char '=' *> skipSpace *> takeLine
-        return (Constant (name, Simple t) value) 
-
--- String constants are parsed somewhat differently from numeric
--- constants. For numerical constants, we drop comments and trailing
--- spaces. For strings, we take the whole line (so comments aren't
--- stripped).
-sanitizeField :: FieldDefinition -> FieldDefinition
-sanitizeField = \case
-    Variable (name, t)                -> Variable ((sanitize name), t)
-    Constant (name, Simple RString) v -> Constant ((sanitize name), Simple RString) v
-    Constant (name, t) val            -> Constant ((sanitize name), t) $
-        T.takeWhile (\c -> c /= '#' && not (isSpace c)) val
-
--- |Ensure that field and constant names are valid Haskell identifiers
--- and do not coincide with Haskell reserved words.
-sanitize :: Text -> Text
-sanitize "data"    = "_data"
-sanitize "type"    = "_type"
-sanitize "class"   = "_class"
-sanitize "module"  = "_module"
-sanitize "newtype" = "_newtype"
-sanitize x         = toLower x 
+        return $ Constant (name, Simple t) $
+            -- String constants are parsed somewhat differently from numeric
+            -- constants. For numerical constants, we drop comments and trailing
+            -- spaces. For strings, we take the whole line (so comments aren't
+            -- stripped).
+            case t of
+                RString -> value
+                _       -> T.takeWhile (/= '#') value
 
 -- |ROS message parser
 rosmsg :: Parser MsgDefinition
-rosmsg = do
-    fields <- many1 $ eitherP thrash field
-    return (sanitizeField <$> rights fields)
-  where field  = choice [constantParser, variableParser]
-        thrash = choice [comment, endOfLine]
+rosmsg = rights <$> many1 (eitherP junk field)
+  where field = choice [constantParser, variableParser]
+        junk  = choice [comment, endOfLine]
