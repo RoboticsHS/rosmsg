@@ -49,16 +49,16 @@ variableParser = do
 
     plain = do
         name <- space *> skipSpace *> identifier <* takeLine
-        return $ (,) name
+        return $ flip (,) name
 
     array = do
         name <- skipSpace *> string "[]" *> skipSpace *> identifier <* takeLine
-        return $ (,) name . Array
+        return $ flip (,) name . Array
 
     fixedArray = do
         len <- skipSpace *> char '[' *> decimal <* char ']'
         name <- skipSpace *> identifier <* takeLine
-        return $ (,) name . FixedArray len 
+        return $ flip (,) name . FixedArray len
 
 -- |Parse constants defined in the message
 constantParser :: Parser FieldDefinition
@@ -67,7 +67,7 @@ constantParser = choice (go <$> enumFrom RBool)
     go t = do
         name <- string (showType t) *> skipSpace *> identifier <* space
         value <- skipSpace *> char '=' *> skipSpace *> takeLine
-        return $ Constant (name, Simple t) $
+        return $ Constant (Simple t, name) $
             -- String constants are parsed somewhat differently from numeric
             -- constants. For numerical constants, we drop comments and trailing
             -- spaces. For strings, we take the whole line (so comments aren't

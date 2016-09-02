@@ -46,7 +46,7 @@ data FieldType
 type FieldName = Text
 
 -- |Field is a pair of name - value
-type Field = (FieldName, FieldType)
+type Field = (FieldType, FieldName)
 
 -- |ROS message field is a variable or constant declaration
 data FieldDefinition

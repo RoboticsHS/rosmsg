@@ -25,6 +25,6 @@ rosType (FixedArray l t) = rosType t <> "[" <> fromString (show l) <> "]"
 render :: MsgDefinition -> Builder
 render = foldl1 (\a b -> a <> "\n" <> b) . fmap go . sort
   where sort v = filter isConstant v ++ filter (not . isConstant) v
-        go (Constant (name, typ) val) = rosType typ <> " " <>
+        go (Constant (typ, name) val) = rosType typ <> " " <>
                                         fromText name <> "=" <> fromText val
-        go (Variable (name, typ)) = rosType typ <> " " <> fromText name
+        go (Variable (typ, name)) = rosType typ <> " " <> fromText name

@@ -40,8 +40,8 @@ typeQ (FixedArray l t) = appT (appT (conT $ mkName "ROSFixedArray") (typeQ t))
 -- and do not coincide with Haskell reserved words.
 sanitizeField :: FieldDefinition -> FieldDefinition
 sanitizeField = \case
-    Constant (a, b) c -> Constant (sanitize a, b) c
-    Variable (a, b)   -> Variable (sanitize a, b) 
+    Constant (a, b) c -> Constant (a, sanitize b) c
+    Variable (a, b)   -> Variable (a, sanitize b) 
   where sanitize x | isKeyword x = T.cons '_' x
                    | otherwise   = x
         isKeyword = flip elem [ "as", "case", "of", "class"
@@ -76,8 +76,8 @@ mkFlatType = \case
     RTime     -> "ROSTime"
 
 fieldQ :: FieldDefinition -> Maybe VarStrictTypeQ
-fieldQ (Constant _ _)    = Nothing 
-fieldQ (Variable (name, typ)) = Just $ varStrictType recName recType
+fieldQ (Constant _ _)         = Nothing 
+fieldQ (Variable (typ, name)) = Just $ varStrictType recName recType
   where recName = mkName ('_' : T.unpack name)
         recType = strictType notStrict (typeQ typ)
 
@@ -117,7 +117,7 @@ lensSig lensName a b =
 -- FROM: Lens.Family.THCore
 deriveLens :: Name -> FieldDefinition -> [DecQ]
 deriveLens _ (Constant _ _)       = []
-deriveLens dataName (Variable (name, typ)) = [ lensSig lensName (conT dataName) (typeQ typ)
+deriveLens dataName (Variable (typ, name)) = [ lensSig lensName (conT dataName) (typeQ typ)
                                              , funD lensName [defLine]]
   where a = mkName "a"
         f = mkName "f"
