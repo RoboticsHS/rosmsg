@@ -1,5 +1,7 @@
 module Robotics.ROS.Msg
-  ( Message(..)
+  ( module Robotics.ROS.Msg.ROSArray
+  , module Lens.Simple
+  , Message(..)
   , Stamped(..)
   , ROSDuration
   , ROSTime
@@ -9,7 +11,9 @@ import Data.Digest.Pure.MD5 (MD5Digest)
 import Data.Binary (Binary)
 import Data.Word (Word32)
 import Data.Text (Text)
+import Lens.Simple
 
+import Robotics.ROS.Msg.ROSArray
 import Robotics.ROS.Msg.Types
 
 class Binary a => Message a where
