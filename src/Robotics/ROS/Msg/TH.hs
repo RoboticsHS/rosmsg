@@ -29,16 +29,14 @@ rosmsg = QuasiQuoter
   , quoteType = undefined
   }
 
-externalDeps :: MsgDefinition -> [Name]
-externalDeps msg =
-    fmap (mkName . T.unpack) $ catMaybes $ go <$> msg
+externalTypes :: MsgDefinition -> [TypeQ]
+externalTypes msg = toType <$> catMaybes (go <$> msg)
   where
-    go = \case
-        Variable (Custom t, _)                -> Just t
-        Variable (Array (Custom t), _)        -> Just t
-        Variable (FixedArray _ (Custom t), _) -> Just t
-        _ -> Nothing
-        
+    go (Variable (Custom t, _))                = Just t
+    go (Variable (Array (Custom t), _))        = Just t
+    go (Variable (FixedArray _ (Custom t), _)) = Just t
+    go _ = Nothing
+    toType = conT . mkName . T.unpack
 
 typeQ :: FieldType -> TypeQ
 typeQ (Simple t)       = conT $ mkName $ mkFlatType t
@@ -50,12 +48,14 @@ typeQ (FixedArray l t) = appT (appT (conT $ mkName "ROSFixedArray") (typeQ t))
 -- Ensure that field and constant names are valid Haskell identifiers
 -- and do not coincide with Haskell reserved words.
 sanitizeField :: FieldDefinition -> FieldDefinition
-sanitizeField = \case
-    Constant (a, b) c -> Constant (a, sanitize b) c
-    Variable (a, b)   -> Variable (a, sanitize b) 
-  where sanitize x | isKeyword x = T.cons '_' x
-                   | otherwise   = x
-        isKeyword = flip elem [ "as", "case", "of", "class"
+sanitizeField (Constant (a, b) c) = Constant (a, sanitize b) c
+sanitizeField (Variable (a, b))   = Variable (a, sanitize b) 
+
+-- Sanitize identifier for valid Haskell
+sanitize :: T.Text -> T.Text
+sanitize x | isKeyword x = T.cons '_' x
+           | otherwise   = x
+  where isKeyword = flip elem [ "as", "case", "of", "class"
                               , "data", "family", "instance"
                               , "default", "deriving", "do"
                               , "forall", "foreign", "hiding"
@@ -68,7 +68,7 @@ sanitizeField = \case
 -- Generate the name of the Haskell type that corresponds to a flat
 -- (i.e. non-array) ROS type.
 mkFlatType :: SimpleType -> String
-mkFlatType = \case
+mkFlatType t = case t of
     RBool     -> "Bool"
     RInt8     -> "Int8"
     RUInt8    -> "Word8"
@@ -93,20 +93,20 @@ fieldQ (Variable (typ, name)) = Just $ varStrictType recName recType
         recType = strictType notStrict (typeQ typ)
 
 -- Generate the getDigest Message class implementation 
-mkDigest :: MsgDefinition -> DecQ
-mkDigest msg = funD (mkName "getDigest") [digest]
+mkGetDigest :: MsgDefinition -> DecQ
+mkGetDigest msg = funD (mkName "getDigest") [digest]
   where
     digest  = clause [wildP] (normalB digestE) [] 
     src     = unpack $ toLazyText $ render' (const "%s") msg
     digestE = appE (dyn "md5") $
               appE (dyn "pack") $
               appsE $ [dyn "printf", stringE src] ++ deps
-    getDigest t = appE (dyn "getDigest") (sigE (dyn "undefined") (conT t))
-    deps = appE (dyn "show") . getDigest <$> externalDeps msg
+    getDigest t = appE (dyn "getDigest") (sigE (dyn "undefined") t)
+    deps = appE (dyn "show") . getDigest <$> externalTypes msg
 
 -- Generate the getType Message class implementation 
-mkType :: String -> DecQ
-mkType t = funD (mkName "getType") [typeString]
+mkGetType :: String -> DecQ
+mkGetType t = funD (mkName "getType") [typeString]
   where
     typeString = clause [wildP] (normalB (stringE msgType)) []
     msgType = let [m, p] = fmap (drop 1) $ take 2 $
@@ -161,9 +161,9 @@ quoteMsgDec txt = do
     lenses      <- sequence (concat (deriveLens dataName <$> fields))
 
     msgData     <- dataD (cxt []) dataName [] [dataRecords] derivingD
-    binInstance <- instanceD' dataName binaryC []
-    defInstance <- instanceD' dataName defaultC [mkDef dataName recordList] 
-    msgInstance <- instanceD' dataName messageC [mkDigest msg, mkType l_mod]
+    binInstance <- instanceD' dataName binaryT []
+    defInstance <- instanceD' dataName defaultT [mkDef dataName recordList] 
+    msgInstance <- instanceD' dataName messageT [mkGetDigest msg, mkGetType l_mod]
 
     return $ [ msgData
              , binInstance
@@ -172,9 +172,9 @@ quoteMsgDec txt = do
              ] ++ lenses 
   where Done _ msg = P.parse P.rosmsg (pack txt)
         mkDataName = mkName . drop 1 . last . groupBy (const isAlphaNum)
-        binaryC    = conT (mkName "Binary")
-        defaultC   = conT (mkName "Default")
-        messageC   = conT (mkName "Message")
+        binaryT    = conT (mkName "Binary")
+        defaultT   = conT (mkName "Default")
+        messageT   = conT (mkName "Message")
         derivingD  = [ mkName "Show", mkName "Eq", mkName "Ord"
                      , mkName "Generic", mkName "Data", mkName "Typeable"
                      ]

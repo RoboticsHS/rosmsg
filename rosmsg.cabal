@@ -30,7 +30,7 @@ library
                      , Robotics.ROS.Msg.ROSArray
   default-language:    Haskell2010
   ghc-options:         -Wall
-  default-extensions:  OverloadedStrings, LambdaCase
+  default-extensions:  OverloadedStrings
 
 test-suite rosmsg-test
   type:                exitcode-stdio-1.0
