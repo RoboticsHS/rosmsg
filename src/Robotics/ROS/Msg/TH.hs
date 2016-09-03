@@ -15,7 +15,7 @@ import Data.Maybe (catMaybes)
 import Data.List (groupBy)
 
 import qualified Robotics.ROS.Msg.Parser as P
-import Robotics.ROS.Msg.Render
+import Robotics.ROS.Msg.Render (render')
 import Robotics.ROS.Msg.Types
 
 rosmsgFrom :: QuasiQuoter
@@ -28,6 +28,17 @@ rosmsg = QuasiQuoter
   , quotePat  = undefined
   , quoteType = undefined
   }
+
+externalDeps :: MsgDefinition -> [Name]
+externalDeps msg =
+    fmap (mkName . T.unpack) $ catMaybes $ go <$> msg
+  where
+    go = \case
+        Variable (Custom t, _)                -> Just t
+        Variable (Array (Custom t), _)        -> Just t
+        Variable (FixedArray _ (Custom t), _) -> Just t
+        _ -> Nothing
+        
 
 typeQ :: FieldType -> TypeQ
 typeQ (Simple t)       = conT $ mkName $ mkFlatType t
@@ -82,16 +93,20 @@ fieldQ (Variable (typ, name)) = Just $ varStrictType recName recType
         recType = strictType notStrict (typeQ typ)
 
 -- Generate the getDigest Message class implementation 
-getDigest :: MsgDefinition -> DecQ
-getDigest msg = funD (mkName "getDigest") [digest]
+mkDigest :: MsgDefinition -> DecQ
+mkDigest msg = funD (mkName "getDigest") [digest]
   where
-    digest = clause [wildP] (normalB (appE md5 (stringE src))) []
-    src    = unpack $ toLazyText $ render msg
-    md5    = varE (mkName "md5")
+    digest  = clause [wildP] (normalB digestE) [] 
+    src     = unpack $ toLazyText $ render' (const "%s") msg
+    digestE = appE (dyn "md5") $
+              appE (dyn "pack") $
+              appsE $ [dyn "printf", stringE src] ++ deps
+    getDigest t = appE (dyn "getDigest") (sigE (dyn "undefined") (conT t))
+    deps = appE (dyn "show") . getDigest <$> externalDeps msg
 
 -- Generate the getType Message class implementation 
-getType :: String -> DecQ
-getType t = funD (mkName "getType") [typeString]
+mkType :: String -> DecQ
+mkType t = funD (mkName "getType") [typeString]
   where
     typeString = clause [wildP] (normalB (stringE msgType)) []
     msgType = let [m, p] = fmap (drop 1) $ take 2 $
@@ -99,8 +114,8 @@ getType t = funD (mkName "getType") [typeString]
               in fmap toLower p ++ "/" ++ m
 
 -- Generate def method of Default instance
-defFun :: Name -> [a] -> DecQ
-defFun name recs = funD defName [def] 
+mkDef :: Name -> [a] -> DecQ
+mkDef name recs = funD defName [def] 
   where def = clause [] (normalB (foldl appE (conE name) recsDef)) []
         defName = mkName "def"
         recsDef = (const (varE defName)) <$> recs
@@ -116,9 +131,10 @@ lensSig lensName a b =
 -- lensName f a = (\x -> a { field = x }) `fmap` f (field a)
 -- FROM: Lens.Family.THCore
 deriveLens :: Name -> FieldDefinition -> [DecQ]
-deriveLens _ (Constant _ _)       = []
-deriveLens dataName (Variable (typ, name)) = [ lensSig lensName (conT dataName) (typeQ typ)
-                                             , funD lensName [defLine]]
+deriveLens _ (Constant _ _) = []
+deriveLens dataName (Variable (typ, name)) =
+    [ lensSig lensName (conT dataName) (typeQ typ)
+    , funD lensName [defLine]]
   where a = mkName "a"
         f = mkName "f"
         lensName  = mkName (T.unpack name) 
@@ -146,8 +162,8 @@ quoteMsgDec txt = do
 
     msgData     <- dataD (cxt []) dataName [] [dataRecords] derivingD
     binInstance <- instanceD' dataName binaryC []
-    defInstance <- instanceD' dataName defaultC [defFun dataName recordList] 
-    msgInstance <- instanceD' dataName messageC [getDigest msg, getType l_mod]
+    defInstance <- instanceD' dataName defaultC [mkDef dataName recordList] 
+    msgInstance <- instanceD' dataName messageC [mkDigest msg, mkType l_mod]
 
     return $ [ msgData
              , binInstance
