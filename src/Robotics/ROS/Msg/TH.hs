@@ -18,9 +18,11 @@ import qualified Robotics.ROS.Msg.Parser as P
 import Robotics.ROS.Msg.Render (render')
 import Robotics.ROS.Msg.Types
 
+-- |Generate ROS message declarations from file
 rosmsgFrom :: QuasiQuoter
 rosmsgFrom = quoteFile rosmsg
 
+-- |ROS message QQ for data type and instances generation
 rosmsg :: QuasiQuoter
 rosmsg = QuasiQuoter
   { quoteDec  = quoteMsgDec
@@ -29,6 +31,7 @@ rosmsg = QuasiQuoter
   , quoteType = undefined
   }
 
+-- Take list of external types used in message
 externalTypes :: MsgDefinition -> [TypeQ]
 externalTypes msg = toType <$> catMaybes (go <$> msg)
   where
@@ -38,6 +41,7 @@ externalTypes msg = toType <$> catMaybes (go <$> msg)
     go _ = Nothing
     toType = conT . mkName . T.unpack
 
+-- Field to Type converter
 typeQ :: FieldType -> TypeQ
 typeQ (Simple t)       = conT $ mkName $ mkFlatType t
 typeQ (Custom t)       = conT $ mkName $ T.unpack t
@@ -86,6 +90,7 @@ mkFlatType t = case t of
     RDuration -> "ROSDuration"
     RTime     -> "ROSTime"
 
+-- Field definition to record var converter
 fieldQ :: FieldDefinition -> Maybe VarStrictTypeQ
 fieldQ (Constant _ _)         = Nothing 
 fieldQ (Variable (typ, name)) = Just $ varStrictType recName recType
@@ -105,13 +110,14 @@ mkGetDigest msg = funD (mkName "getDigest") [digest]
     deps = appE (dyn "show") . getDigest <$> externalTypes msg
 
 -- Generate the getType Message class implementation 
-mkGetType :: String -> DecQ
-mkGetType t = funD (mkName "getType") [typeString]
-  where
-    typeString = clause [wildP] (normalB (stringE msgType)) []
-    msgType = let [m, p] = fmap (drop 1) $ take 2 $
-                           reverse $ groupBy (const (/= '.')) t
-              in fmap toLower p ++ "/" ++ m
+mkGetType :: DecQ
+mkGetType = do
+    l_mod <- loc_module <$> location
+    let typeString = clause [wildP] (normalB (stringE msgType)) []
+        msgType = let [m, p] = fmap (drop 1) $ take 2 $
+                           reverse $ groupBy (const (/= '.')) l_mod
+                   in fmap toLower p ++ "/" ++ m
+    funD (mkName "getType") [typeString]
 
 -- Generate def method of Default instance
 mkDef :: Name -> [a] -> DecQ
@@ -146,38 +152,98 @@ deriveLens dataName (Variable (typ, name)) =
                 |]
         record rec fld val = val >>= \v -> recUpdE (varE rec) [return (fld, v)]
 
+-- |Instance declaration with empty context
 instanceD' :: Name -> TypeQ -> [DecQ] -> DecQ
 instanceD' name insType insDecs =
     instanceD (cxt []) (appT insType (conT name)) insDecs
 
+-- |Lenses declarations
+mkLenses :: Name -> MsgDefinition -> [DecQ]
+mkLenses name msg =
+    concat (deriveLens name <$> fields)
+  where
+    fields     = sanitizeField <$> msg
+
+-- |Data type declaration
+mkData :: Name -> MsgDefinition -> [DecQ]
+mkData name msg = pure $
+    dataD (cxt []) name [] [recs] derivingD
+  where
+    fields     = sanitizeField <$> msg
+    recs       = recC name (catMaybes (fieldQ <$> fields))
+    derivingD  = [ mkName "Show", mkName "Eq", mkName "Ord"
+                 , mkName "Generic", mkName "Data", mkName "Typeable"
+                 ]
+
+-- |Binary instance declaration
+mkBinary :: Name -> a -> [DecQ]
+mkBinary name _ = pure $
+    instanceD' name binaryT []
+  where
+    binaryT    = conT (mkName "Binary")
+
+-- |Default instance declaration
+mkDefault :: Name -> MsgDefinition -> [DecQ]
+mkDefault name msg = pure $
+    instanceD' name defaultT [mkDef name recordList]
+  where
+    recordList = catMaybes (fieldQ <$> fields)
+    defaultT   = conT (mkName "Default")
+    fields     = sanitizeField <$> msg
+
+-- |Message instance declaration
+mkMessage :: Name -> MsgDefinition -> [DecQ]
+mkMessage name msg = pure $
+    instanceD' name messageT [mkGetDigest msg, mkGetType]
+  where
+    messageT = conT (mkName "Message")
+
+-- |Stamped instance declaration
+mkStamped :: Name -> MsgDefinition -> [DecQ]
+mkStamped name msg | hasHeader msg = pure go
+                   | otherwise = []
+  where
+    hasHeader [Variable (Custom "Header", _), _] = True
+    hasHeader _ = False
+
+    lensE f    = infixE (Just (dyn "header")) (dyn ".") (Just (dyn f))
+    seqLensE   = lensE "seq"
+    stampLensE = lensE "stamp"
+    frameLensE = lensE "frame_id"
+
+    mkGetSequence = funD (mkName "getSequence") [
+        clause [] (normalB (appE (dyn "view") seqLensE)) []]
+
+    mkSetSequence = funD (mkName "setSequence") [
+        clause [] (normalB (appE (dyn "set") seqLensE)) []]
+
+    mkGetStamp = funD (mkName "getStamp") [
+        clause [] (normalB (appE (dyn "view") stampLensE)) []]
+
+    mkGetFrame = funD (mkName "getFrame") [
+        clause [] (normalB (appE (dyn "view") frameLensE)) []]
+
+    stampedT = conT (mkName "Stamped")
+
+    go = instanceD' name stampedT [ mkGetSequence
+                                  , mkSetSequence
+                                  , mkGetStamp
+                                  , mkGetFrame ]
+
 quoteMsgDec :: String -> Q [Dec]
 quoteMsgDec txt = do
-    l_mod <- loc_module <$> location
-    let dataName    = mkDataName l_mod
-        fields      = sanitizeField <$> msg
-        recordList  = catMaybes (fieldQ <$> fields)
-        dataRecords = recC dataName recordList
-
-    lenses      <- sequence (concat (deriveLens dataName <$> fields))
-
-    msgData     <- dataD (cxt []) dataName [] [dataRecords] derivingD
-    binInstance <- instanceD' dataName binaryT []
-    defInstance <- instanceD' dataName defaultT [mkDef dataName recordList] 
-    msgInstance <- instanceD' dataName messageT [mkGetDigest msg, mkGetType l_mod]
-
-    return $ [ msgData
-             , binInstance
-             , defInstance
-             , msgInstance
-             ] ++ lenses 
+    name <- mkDataName . loc_module <$> location
+    sequence $ concatMap (msgRun name) $
+      [ mkData
+      , mkBinary
+      , mkDefault
+      , mkMessage
+      , mkStamped
+      , mkLenses
+      ]
   where Done _ msg = P.parse P.rosmsg (pack txt)
         mkDataName = mkName . drop 1 . last . groupBy (const isAlphaNum)
-        binaryT    = conT (mkName "Binary")
-        defaultT   = conT (mkName "Default")
-        messageT   = conT (mkName "Message")
-        derivingD  = [ mkName "Show", mkName "Eq", mkName "Ord"
-                     , mkName "Generic", mkName "Data", mkName "Typeable"
-                     ]
+        msgRun n   = ($ (n, msg)) . uncurry
 
 quoteMsgExp :: String -> ExpQ
 quoteMsgExp txt = stringE (show msg)
