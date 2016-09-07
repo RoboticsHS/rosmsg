@@ -1,4 +1,4 @@
-{-# LANGUAGE KindSignatures, DataKinds, DeriveDataTypeable #-}
+{-# LANGUAGE KindSignatures, DataKinds, DeriveDataTypeable, GeneralizedNewtypeDeriving #-}
 module Robotics.ROS.Msg.ROSArray
   ( ROSArray(..)
   , ROSFixedArray(..)
@@ -17,18 +17,18 @@ type Array = []
 
 -- |A type for arrays in ROS messages
 newtype ROSArray a = ROSArray { unArray :: Array a }
-  deriving (Show, Eq, Ord, Data, Typeable)
+  deriving (Show, Eq, Ord, Data, Typeable, Functor)
 
--- Array monoid
+-- |Array monoid
 instance Monoid (ROSArray a) where
     mempty = ROSArray []
     mappend a b = ROSArray (unArray a ++ unArray b)
 
--- Array default is empty
+-- |Array default is empty
 instance Default (ROSArray a) where
     def = mempty
 
--- Array serialization
+-- |Array serialization
 instance Binary a => Binary (ROSArray a) where
     put (ROSArray arr) = put len >> sequence_ (put <$> arr)
       where len :: Word32
@@ -38,26 +38,29 @@ instance Binary a => Binary (ROSArray a) where
              ROSArray <$> replicateM (fromIntegral len) get
 
 -- |A type for fixed arrays in ROS messages
-newtype ROSFixedArray a (n :: Nat) = ROSFixedArray { unFixedArray :: Array a }
-  deriving (Show, Eq, Ord, Data, Typeable)
+newtype ROSFixedArray (n :: Nat) a = ROSFixedArray { unFixedArray :: Array a }
+  deriving (Show, Eq, Ord, Data, Typeable, Functor)
 
--- Fixed array monoid
+-- |Fixed array monoid
 instance Monoid (ROSFixedArray a n) where
     mempty = ROSFixedArray []
     mappend a b = ROSFixedArray (unFixedArray a ++ unFixedArray b)
 
--- Fixed array default list of `n` default elements
-instance (Default a, KnownNat n) => Default (ROSFixedArray a n) where
-    def = let arr = mempty in modify arr $ replicate (len arr) def 
-      where modify :: ROSFixedArray a n -> Array b -> ROSFixedArray b n 
-            modify a x = a { unFixedArray = x }
-            len = fromIntegral . natVal
+size :: (KnownNat n, Num b) => ROSFixedArray n a -> b
+size = fromIntegral . natVal . proxy
+  where proxy :: ROSFixedArray n a -> proxy n
+        proxy _ = undefined
 
--- Fixed array serialization
-instance (Binary a, KnownNat n) => Binary (ROSFixedArray a n) where
+modify :: ROSFixedArray n a -> Array b -> ROSFixedArray n b
+modify a b = a { unFixedArray = b }
+
+instance (Default a, KnownNat n) => Default (ROSFixedArray n a) where
+    -- |Fixed array default list of `n` default elements
+    def = modify arr (replicate (size arr) def)
+      where arr = mempty
+
+-- |Fixed array serialization
+instance (Binary a, KnownNat n) => Binary (ROSFixedArray n a) where
     put (ROSFixedArray arr) = sequence_ (put <$> arr)
-
-    get = let arr = mempty in modify arr <$> replicateM (len arr) get 
-      where modify :: ROSFixedArray a n -> Array b -> ROSFixedArray b n 
-            modify a x = a { unFixedArray = x }
-            len = fromIntegral . natVal
+    get = modify arr <$> replicateM (size arr) get
+      where arr = mempty
