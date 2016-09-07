@@ -17,7 +17,7 @@ type Array = []
 
 -- |A type for arrays in ROS messages
 newtype ROSArray a = ROSArray { unArray :: Array a }
-  deriving (Show, Eq, Ord, Data, Typeable, Functor)
+  deriving (Show, Eq, Ord, Data, Typeable, Functor, Applicative)
 
 -- |Array monoid
 instance Monoid (ROSArray a) where
@@ -39,7 +39,7 @@ instance Binary a => Binary (ROSArray a) where
 
 -- |A type for fixed arrays in ROS messages
 newtype ROSFixedArray (n :: Nat) a = ROSFixedArray { unFixedArray :: Array a }
-  deriving (Show, Eq, Ord, Data, Typeable, Functor)
+  deriving (Show, Eq, Ord, Data, Typeable, Functor, Applicative)
 
 -- |Fixed array monoid
 instance Monoid (ROSFixedArray a n) where
