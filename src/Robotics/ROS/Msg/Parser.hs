@@ -78,6 +78,6 @@ constantParser = choice (go <$> enumFrom RBool)
 
 -- |ROS message parser
 rosmsg :: Parser MsgDefinition
-rosmsg = rights <$> many1 (eitherP junk field)
+rosmsg = rights <$> many' (eitherP junk field)
   where field = choice [constantParser, variableParser]
         junk  = choice [comment, endOfLine]
