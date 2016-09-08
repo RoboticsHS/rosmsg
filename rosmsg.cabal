@@ -1,5 +1,5 @@
 name:                rosmsg
-version:             0.3.1.0
+version:             0.3.2.0
 synopsis:            ROS message parser, render, TH
 description:         Please see README.md
 homepage:            https://github.com/akru/rosmsg#readme
@@ -16,6 +16,7 @@ library
   hs-source-dirs:      src
   exposed-modules:     Robotics.ROS.Msg
                      , Robotics.ROS.Msg.TH
+                     , Robotics.ROS.Msg.Types
                      , Robotics.ROS.Msg.Parser
                      , Robotics.ROS.Msg.Render
   build-depends:       base                 >= 4.7    && < 5
@@ -26,8 +27,7 @@ library
                      , data-default         >= 0.5    && < 1
                      , template-haskell     >= 2.10   && < 3
 
-  other-modules:       Robotics.ROS.Msg.Types
-                     , Robotics.ROS.Msg.ROSArray
+  other-modules:       Robotics.ROS.Msg.ROSArray
   default-language:    Haskell2010
   ghc-options:         -Wall
   default-extensions:  OverloadedStrings
