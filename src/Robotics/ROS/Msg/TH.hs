@@ -4,19 +4,24 @@ module Robotics.ROS.Msg.TH
   , rosmsgFrom
   ) where
 
-import Data.Attoparsec.Text.Lazy (Result(..))
-import Data.Text.Lazy.Builder (toLazyText)
-import Data.Char (isAlphaNum, toLower)
-import Data.Text.Lazy (pack, unpack)
+import qualified Data.ByteString.Lazy.Char8 as LBS
+import           Data.Attoparsec.Text.Lazy (Result(..))
+import           Data.Text.Lazy.Builder (toLazyText)
+import           Data.Char (isAlphaNum, toLower)
+import           Data.Text.Lazy (pack, unpack)
+import           Data.Digest.Pure.MD5 (md5)
+import           Data.Maybe (catMaybes)
+import           Text.Printf (printf)
+import           Data.List (groupBy)
 import qualified Data.Text as T
-import Language.Haskell.TH.Quote
-import Language.Haskell.TH
-import Data.Maybe (catMaybes)
-import Data.List (groupBy)
+
+import           Language.Haskell.TH.Quote
+import           Language.Haskell.TH
 
 import qualified Robotics.ROS.Msg.Parser as P
-import Robotics.ROS.Msg.Render (render')
-import Robotics.ROS.Msg.Types
+import           Robotics.ROS.Msg.Render (render')
+import           Robotics.ROS.Msg.Types
+import           Robotics.ROS.Msg
 
 -- |Generate ROS message declarations from file
 rosmsgFrom :: QuasiQuoter
@@ -33,13 +38,13 @@ rosmsg = QuasiQuoter
 
 -- Take list of external types used in message
 externalTypes :: MsgDefinition -> [TypeQ]
-externalTypes msg = toType <$> catMaybes (go <$> msg)
+externalTypes msg =
+    conT . mkName . T.unpack <$> catMaybes (go <$> msg)
   where
     go (Variable (Custom t, _))                = Just t
     go (Variable (Array (Custom t), _))        = Just t
     go (Variable (FixedArray _ (Custom t), _)) = Just t
     go _ = Nothing
-    toType = conT . mkName . T.unpack
 
 -- Field to Type converter
 typeQ :: FieldType -> TypeQ
@@ -73,20 +78,20 @@ sanitize x | isKeyword x = T.cons '_' x
 -- (i.e. non-array) ROS type.
 mkFlatType :: SimpleType -> String
 mkFlatType t = case t of
-    RBool     -> "Bool"
-    RInt8     -> "Int8"
-    RUInt8    -> "Word8"
-    RByte     -> "Word8"
-    RChar     -> "Int8"
-    RInt16    -> "Int16"
-    RUInt16   -> "Word16"
-    RInt32    -> "Int32"
-    RUInt32   -> "Word32"
-    RInt64    -> "Int64"
-    RUInt64   -> "Word64"
-    RFloat32  -> "Float"
-    RFloat64  -> "Double"
-    RString   -> "ByteString"
+    RBool     -> "P.Bool"
+    RInt8     -> "I.Int8"
+    RUInt8    -> "W.Word8"
+    RByte     -> "W.Word8"
+    RChar     -> "I.Int8"
+    RInt16    -> "I.Int16"
+    RUInt16   -> "W.Word16"
+    RInt32    -> "I.Int32"
+    RUInt32   -> "W.Word32"
+    RInt64    -> "I.Int64"
+    RUInt64   -> "W.Word64"
+    RFloat32  -> "P.Float"
+    RFloat64  -> "P.Double"
+    RString   -> "BS.ByteString"
     RDuration -> "ROSDuration"
     RTime     -> "ROSTime"
 
@@ -101,13 +106,12 @@ fieldQ (Variable (typ, name)) = Just $ varStrictType recName recType
 mkGetDigest :: MsgDefinition -> DecQ
 mkGetDigest msg = funD (mkName "getDigest") [digest]
   where
-    digest  = clause [wildP] (normalB digestE) [] 
-    src     = unpack $ toLazyText $ render' (const "%s") msg
-    digestE = appE (dyn "md5") $
-              appE (dyn "pack") $
-              appsE $ [dyn "printf", stringE src] ++ deps
-    getDigest t = appE (dyn "getDigest") (sigE (dyn "undefined") t)
-    deps = appE (dyn "show") . getDigest <$> externalTypes msg
+    digest      = clause [wildP] (normalB digestE) []
+    digestE     = [| md5 (LBS.pack $(source)) |]
+    source      = appsE $ [[|printf|], stringE src] ++ deps
+    src         = unpack $ toLazyText $ render' (const "%s") msg
+    deps        = depDigest <$> externalTypes msg
+    depDigest t = [|show (getDigest (undefined :: $(t)))|]
 
 -- Generate the getType Message class implementation 
 mkGetType :: DecQ
@@ -171,7 +175,7 @@ mkData name msg = pure $
   where
     fields     = sanitizeField <$> msg
     recs       = recC name (catMaybes (fieldQ <$> fields))
-    derivingD  = [ mkName "Show", mkName "Eq", mkName "Ord"
+    derivingD  = [ mkName "P.Show", mkName "P.Eq", mkName "P.Ord"
                  , mkName "Generic", mkName "Data", mkName "Typeable"
                  ]
 
@@ -206,7 +210,7 @@ mkStamped name msg | hasHeader msg = pure go
     hasHeader [Variable (Custom "Header", _), _] = True
     hasHeader _ = False
 
-    lensE f    = infixE (Just (dyn "header")) (dyn ".") (Just (dyn f))
+    lensE f    = [|$(dyn "header") . $(dyn f)|]
     seqLensE   = lensE "seq"
     stampLensE = lensE "stamp"
     frameLensE = lensE "frame_id"

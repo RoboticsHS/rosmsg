@@ -6,14 +6,14 @@ module Robotics.ROS.Msg.Parser
   , rosmsg
   ) where
 
-import Data.Text (Text, pack, toLower)
-import Data.Char (isDigit, isAlpha)
-import Data.Attoparsec.Text.Lazy
+import           Data.Text (Text, pack, toLower)
+import           Data.Char (isDigit, isAlpha)
+import           Data.Attoparsec.Text.Lazy
+import           Control.Arrow ((&&&))
+import           Data.Either (rights)
 import qualified Data.Text as T
-import Control.Arrow ((&&&))
-import Data.Either (rights)
 
-import Robotics.ROS.Msg.Types
+import           Robotics.ROS.Msg.Types
 
 -- |Show simple type
 showType :: Show a => a -> Text
