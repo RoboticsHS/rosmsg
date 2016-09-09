@@ -27,7 +27,7 @@ rosType u (FixedArray l t) = rosType u t <> "[" <> fromString (show l) <> "]"
 -- * constants reordered ahead of other declarations
 --   from http://www.ros.org/wiki/ROS/Technical%20Overview
 render' :: (Text -> Text) -> MsgDefinition -> Builder
-render' uType = foldl1 (\a b -> a <> "\n" <> b) . fmap go . sort
+render' uType = foldl (\a b -> a <> "\n" <> b) mempty . fmap go . sort
   where sort v = filter isConstant v ++ filter (not . isConstant) v
         go (Constant (typ, name) val) = rosType uType typ <> " " <>
                                         fromText name <> "=" <> fromText val
