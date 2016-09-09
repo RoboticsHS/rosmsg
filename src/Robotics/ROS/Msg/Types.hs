@@ -1,18 +1,31 @@
-module Robotics.ROS.Msg.Types
-  ( FieldDefinition(..)
+-- |
+-- Module      :  Robotics.ROS.Msg.Types
+-- Copyright   :  Alexander Krupenkin 2016
+-- License     :  BSD3
+--
+-- Maintainer  :  mail@akru.me
+-- Stability   :  experimental
+-- Portability :  POSIX / WIN32
+--
+-- Common used data types.
+--
+module Robotics.ROS.Msg.Types (
+  -- * ROS message abstract declaration types
+    FieldDefinition(..)
   , SimpleType(..)
   , FieldType(..)
   , MsgDefinition
-  , ROSDuration
   , FieldName
-  , ROSTime
   , Field
+  -- * Time describing
+  , ROSDuration
+  , ROSTime
   ) where
 
 import Data.Word (Word32)
 import Data.Text (Text)
 
--- |A variant type describing the simple types 
+-- | A variant type describing the simple types 
 -- that may be included in a ROS message.
 data SimpleType
   = RBool
@@ -33,7 +46,7 @@ data SimpleType
   | RDuration
   deriving (Show, Enum, Eq)
 
--- |A variant type describing the types that may be included in a ROS
+-- | A variant type describing the types that may be included in a ROS
 -- message.
 data FieldType
   = Simple SimpleType
@@ -42,13 +55,13 @@ data FieldType
   | FixedArray Int FieldType
   deriving (Show, Eq)
 
--- |Field name is text encoded
+-- | Field name is text encoded
 type FieldName = Text
 
--- |Field is a pair of name - value
+-- | Field is a pair of name - value
 type Field = (FieldType, FieldName)
 
--- |ROS message field is a variable or constant declaration
+-- | ROS message field is a variable or constant declaration
 data FieldDefinition
   = Variable Field
   -- ^ Variable field name and type
@@ -56,11 +69,11 @@ data FieldDefinition
   -- ^ Constant field name, type and value
   deriving (Show, Eq)
 
--- |ROS message is a list of fields
+-- | ROS message is a list of fields
 type MsgDefinition = [FieldDefinition]
 
--- |ROSDuration is a tuple of (seconds, nanoseconds)
+-- | ROSDuration is a tuple of (seconds, nanoseconds)
 type ROSDuration = (Word32, Word32)
 
--- |ROSTime is a tuple of (seconds, nanoseconds)
+-- | ROSTime is a tuple of (seconds, nanoseconds)
 type ROSTime = (Word32, Word32)

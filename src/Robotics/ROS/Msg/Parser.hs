@@ -1,8 +1,20 @@
--- |Parser components for the ROS message description language (@msg@
+-- |
+-- Module      :  Robotics.ROS.Msg.Parser
+-- Copyright   :  Alexander Krupenkin 2016
+-- License     :  BSD3
+--
+-- Maintainer  :  mail@akru.me
+-- Stability   :  experimental
+-- Portability :  POSIX / WIN32
+--
+-- Parser components for the ROS message description language (@msg@
 -- files). See http://wiki.ros.org/msg for reference.
-module Robotics.ROS.Msg.Parser
-  ( Result(..)
+--
+module Robotics.ROS.Msg.Parser (
+  -- * Attoparsec re-export
+    Result(..)
   , parse
+  -- * The ROS message language parser
   , rosmsg
   ) where
 
@@ -15,52 +27,55 @@ import qualified Data.Text as T
 
 import           Robotics.ROS.Msg.Types
 
--- |Show simple type
+-- | Show simple type
 showType :: Show a => a -> Text
 showType = toLower . T.drop 1 . pack . show
 
--- |All of simple type and its text representation list
+-- | All of simple type and its text representation list
 simpleAssoc :: [(SimpleType, Text)]
 simpleAssoc = (id &&& showType) <$> enumFrom RBool
 
--- |Line getter
+-- | Line getter
 takeLine :: Parser Text
 takeLine = pack <$> manyTill anyChar (eitherP endOfLine endOfInput)
 
--- |Valid ROS identifier parser
+-- | Valid ROS identifier parser
 identifier :: Parser Text
 identifier = takeWhile1 validChar
   where validChar c = any ($ c) [isDigit, isAlpha, (== '_'), (== '/')]
 
--- |ROS message comments parser
+-- | ROS message comments parser
 comment :: Parser ()
 comment = skipSpace *> char '#' *> takeLine *> pure ()
 
--- |Parse fields defined in the message
+-- | Parse fields defined in the message
 variableParser :: Parser FieldDefinition
 variableParser = do
     typeIdent <- choice [simpleField, customField] 
-    mkField   <- choice [plain, array, fixedArray]
+    mkField   <- choice [flat, array, fixedArray]
     return (Variable $ mkField typeIdent)
   where
     simpleField = Simple . fst <$> choice (mapM string <$> simpleAssoc)
 
     customField = Custom <$> identifier
 
-    plain = do
+    -- | Flat type is no array
+    flat = do
         name <- space *> skipSpace *> identifier <* takeLine
         return $ flip (,) name
 
+    -- | Variable lenght array
     array = do
         name <- skipSpace *> string "[]" *> skipSpace *> identifier <* takeLine
         return $ flip (,) name . Array
 
+    -- | Fixed lenght array
     fixedArray = do
         len <- skipSpace *> char '[' *> decimal <* char ']'
         name <- skipSpace *> identifier <* takeLine
         return $ flip (,) name . FixedArray len
 
--- |Parse constants defined in the message
+-- | Parse constants defined in the message
 constantParser :: Parser FieldDefinition
 constantParser = choice (go <$> enumFrom RBool)
   where
@@ -76,7 +91,7 @@ constantParser = choice (go <$> enumFrom RBool)
                 RString -> value
                 _       -> T.takeWhile (/= '#') value
 
--- |ROS message parser
+-- | The ROS message language parser
 rosmsg :: Parser MsgDefinition
 rosmsg = rights <$> many' (eitherP junk field)
   where field = choice [constantParser, variableParser]

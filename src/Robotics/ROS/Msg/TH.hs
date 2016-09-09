@@ -1,6 +1,22 @@
-{-# LANGUAGE TemplateHaskell, QuasiQuotes, RankNTypes, KindSignatures #-}
-module Robotics.ROS.Msg.TH
-  ( rosmsg
+-- |
+-- Module      :  Robotics.ROS.Msg.TH
+-- Copyright   :  Alexander Krupenkin 2016
+-- License     :  BSD3
+--
+-- Maintainer  :  mail@akru.me
+-- Stability   :  experimental
+-- Portability :  POSIX / WIN32
+--
+-- Template Haskell driven code generator from ROS message language
+-- to Haskell native representation.
+--
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE TemplateHaskell #-}
+module Robotics.ROS.Msg.TH (
+  -- * Native Haskell ROS message codegen 
+    rosmsg
   , rosmsgFrom
   ) where
 
@@ -26,11 +42,12 @@ import           Robotics.ROS.Msg.Render (render')
 import           Robotics.ROS.Msg.Types
 import           Robotics.ROS.Msg
 
--- |Generate ROS message declarations from file
+-- | Generate ROS message declarations from .msg file
 rosmsgFrom :: QuasiQuoter
 rosmsgFrom = quoteFile rosmsg
 
--- |ROS message QQ for data type and instances generation
+-- | QQ for data type and instances generation
+-- from ROS message declaration
 rosmsg :: QuasiQuoter
 rosmsg = QuasiQuoter
   { quoteDec  = quoteMsgDec
@@ -39,6 +56,7 @@ rosmsg = QuasiQuoter
   , quoteType = undefined
   }
 
+-- | Take user type from text type name
 customType :: T.Text -> TypeQ
 customType = conT . mkName . T.unpack . qualify . pkgInTypeHook
   where -- Some messages (e.g. geometry_msgs/Inertia in `com` field)
@@ -48,7 +66,7 @@ customType = conT . mkName . T.unpack . qualify . pkgInTypeHook
         pkgInTypeHook = last . T.split (== '/')
         qualify t     = t <> "." <> t
 
--- Take list of external types used in message
+-- | Take list of external types used in message
 externalTypes :: MsgDefinition -> [TypeQ]
 externalTypes msg = customType <$> catMaybes (go <$> msg)
   where
@@ -57,7 +75,7 @@ externalTypes msg = customType <$> catMaybes (go <$> msg)
     go (Variable (FixedArray _ (Custom t), _)) = Just t
     go _ = Nothing
 
--- Field to Type converter
+-- | Field to Type converter
 typeQ :: FieldType -> TypeQ
 typeQ (Simple t)       = conT $ mkName $ mkFlatType t
 typeQ (Custom t)       = customType t
@@ -65,13 +83,13 @@ typeQ (Array t)        = [t|ROSArray $(typeQ t)|]
 typeQ (FixedArray l t) = [t|ROSFixedArray $arrSize $(typeQ t)|]
   where arrSize = litT $ numTyLit $ fromIntegral l
 
--- Ensure that field and constant names are valid Haskell identifiers
+-- | Ensure that field and constant names are valid Haskell identifiers
 -- and do not coincide with Haskell reserved words.
 sanitizeField :: FieldDefinition -> FieldDefinition
 sanitizeField (Constant (a, b) c) = Constant (a, sanitize b) c
 sanitizeField (Variable (a, b))   = Variable (a, sanitize b) 
 
--- Sanitize identifier for valid Haskell
+-- | Sanitize identifier for valid Haskell
 sanitize :: T.Text -> T.Text
 sanitize x | isKeyword x = T.cons '_' x
            | otherwise   = x
@@ -85,7 +103,7 @@ sanitize x | isKeyword x = T.cons '_' x
                               , "newtype", "proc", "qualified"
                               , "rec", "type", "where"]
 
--- Generate the name of the Haskell type that corresponds to a flat
+-- | Generate the name of the Haskell type that corresponds to a flat
 -- (i.e. non-array) ROS type.
 mkFlatType :: SimpleType -> String
 mkFlatType t = case t of
@@ -106,7 +124,7 @@ mkFlatType t = case t of
     RDuration -> "ROSDuration"
     RTime     -> "ROSTime"
 
--- Default value of field
+-- | Default value of field
 defValue :: FieldDefinition -> Maybe ExpQ
 defValue (Constant _ _) = Nothing
 defValue (Variable (Simple t, _)) = Just $
@@ -116,14 +134,14 @@ defValue (Variable (Simple t, _)) = Just $
         _         -> [|def|]
 defValue (Variable _) = Just [|def|]
 
--- Field definition to record var converter
+-- | Field definition to record var converter
 fieldQ :: FieldDefinition -> Maybe VarStrictTypeQ
 fieldQ (Constant _ _)         = Nothing 
 fieldQ (Variable (typ, name)) = Just $ varStrictType recName recType
   where recName = mkName ('_' : T.unpack name)
         recType = strictType notStrict (typeQ typ)
 
--- Generate the getDigest Message class implementation 
+-- | Generate the getDigest Message class implementation 
 mkGetDigest :: MsgDefinition -> DecQ
 mkGetDigest msg =
     funD' "getDigest" [wildP] [| md5 (LBS.pack $(appsE source)) |]
@@ -133,7 +151,7 @@ mkGetDigest msg =
     depDigest t = [|show (getDigest (undefined :: $(t)))|]
     render      = unpack . toLazyText . render' (const "%s")
 
--- Generate the getType Message class implementation 
+-- | Generate the getType Message class implementation 
 mkGetType :: DecQ
 mkGetType = do
     l_mod <- loc_module <$> location
@@ -142,12 +160,12 @@ mkGetType = do
                    in fmap toLower p ++ "/" ++ m
     funD' "getType" [wildP] [|msgType|]
 
--- Lens signature
+-- | Lens signature
 lensSig :: String -> TypeQ -> TypeQ -> DecQ
 lensSig name a b = sigD (mkName name)
     [t|forall f. Functor f => ($b -> f $b) -> $a -> f $a|]
 
--- Given a record field name,
+-- | Given a record field name,
 -- produces a single function declaration:
 -- lensName :: forall f. Functor f => (a -> f a') -> b -> f b' 
 -- lensName f a = (\x -> a { field = x }) `fmap` f (field a)
@@ -166,23 +184,21 @@ deriveLens dataName (Variable (typ, name)) =
                 |]
         record rec fld val = val >>= \v -> recUpdE (varE rec) [return (fld, v)]
 
--- |Instance declaration with empty context
+-- | Instance declaration with empty context
 instanceD' :: Name -> TypeQ -> [DecQ] -> DecQ
 instanceD' name insType insDecs =
     instanceD (cxt []) (appT insType (conT name)) insDecs
 
--- |Simple function declaration
+-- | Simple function declaration
 funD' :: String -> [PatQ] -> ExpQ -> DecQ
 funD' name p f = funD (mkName name) [clause p (normalB f) []]
 
--- |Lenses declarations
+-- | Lenses declarations
 mkLenses :: Name -> MsgDefinition -> [DecQ]
 mkLenses name msg =
-    concat (deriveLens name <$> fields)
-  where
-    fields     = sanitizeField <$> msg
+    concat (deriveLens name . sanitizeField <$> msg)
 
--- |Data type declaration
+-- | Data type declaration
 mkData :: Name -> MsgDefinition -> [DecQ]
 mkData name msg = pure $
     dataD (cxt []) name [] [recs] derivingD
@@ -193,14 +209,14 @@ mkData name msg = pure $
                  , mkName "Generic", mkName "Data", mkName "Typeable"
                  ]
 
--- |Binary instance declaration
+-- | Binary instance declaration
 mkBinary :: Name -> a -> [DecQ]
 mkBinary name _ = pure $
     instanceD' name binaryT []
   where
     binaryT    = conT (mkName "Binary")
 
--- |Default instance declaration
+-- | Default instance declaration
 mkDefault :: Name -> MsgDefinition -> [DecQ]
 mkDefault name msg = pure $
     instanceD' name defaultT [defFun]
@@ -209,14 +225,14 @@ mkDefault name msg = pure $
     defaults = catMaybes (defValue . sanitizeField <$> msg)
     defFun   = funD' "def" [] $ appsE (conE name : defaults)
 
--- |Message instance declaration
+-- | Message instance declaration
 mkMessage :: Name -> MsgDefinition -> [DecQ]
 mkMessage name msg = pure $
     instanceD' name messageT [mkGetDigest msg, mkGetType]
   where
     messageT = conT (mkName "Message")
 
--- |Stamped instance declaration
+-- | Stamped instance declaration
 mkStamped :: Name -> MsgDefinition -> [DecQ]
 mkStamped name msg | hasHeader msg = pure go
                    | otherwise = []
@@ -241,6 +257,7 @@ mkStamped name msg | hasHeader msg = pure go
                                   , mkGetStamp
                                   , mkGetFrame ]
 
+-- | TemplateHaskell codegen from the ROS message language
 quoteMsgDec :: String -> Q [Dec]
 quoteMsgDec txt = do
     name <- mkDataName . loc_module <$> location
@@ -256,6 +273,7 @@ quoteMsgDec txt = do
         mkDataName = mkName . drop 1 . last . groupBy (const isAlphaNum)
         msgRun n   = ($ (n, msg)) . uncurry
 
+-- | Simple parse ROS message and show
 quoteMsgExp :: String -> ExpQ
 quoteMsgExp txt = stringE (show msg)
   where Done _ msg = Parser.parse Parser.rosmsg (pack txt)
