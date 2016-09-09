@@ -1,8 +1,8 @@
 name:                rosmsg
-version:             0.4.3.1
+version:             0.4.3.2
 synopsis:            ROS message parser, render, TH
 description:         Please see README.md
-homepage:            https://github.com/akru/rosmsg#readme
+homepage:            https://github.com/RoboticsHS/rosmsg#readme
 license:             BSD3
 license-file:        LICENSE
 author:              Alexander Krupenkin
@@ -36,4 +36,4 @@ library
 
 source-repository head
   type:     git
-  location: https://github.com/akru/rosmsg
+  location: https://github.com/RoboticsHS/rosmsg
