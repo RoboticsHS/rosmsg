@@ -91,7 +91,7 @@ mkFlatType t = case t of
     RUInt64   -> "W.Word64"
     RFloat32  -> "P.Float"
     RFloat64  -> "P.Double"
-    RString   -> "BS.ByteString"
+    RString   -> "P.String"
     RDuration -> "ROSDuration"
     RTime     -> "ROSTime"
 
