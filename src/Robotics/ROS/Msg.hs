@@ -14,10 +14,12 @@ import Data.Text (Text)
 import Robotics.ROS.Msg.ROSArray
 import Robotics.ROS.Msg.Types
 
+-- |ROS message
 class Binary a => Message a where
     getDigest :: a -> MD5Digest
     getType   :: a -> Text
 
+-- |ROS message with Header
 class Message a => Stamped a where
     getSequence :: a -> Word32
     setSequence :: Word32 -> a -> a

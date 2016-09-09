@@ -13,12 +13,15 @@ import           Data.Digest.Pure.MD5 (md5)
 import           Data.Maybe (catMaybes)
 import           Text.Printf (printf)
 import           Data.List (groupBy)
+import           Data.Default (def)
+import           Data.Monoid ((<>))
+import qualified Lens.Family2 as L
 import qualified Data.Text as T
 
 import           Language.Haskell.TH.Quote
 import           Language.Haskell.TH
 
-import qualified Robotics.ROS.Msg.Parser as P
+import qualified Robotics.ROS.Msg.Parser as Parser
 import           Robotics.ROS.Msg.Render (render')
 import           Robotics.ROS.Msg.Types
 import           Robotics.ROS.Msg
@@ -36,10 +39,14 @@ rosmsg = QuasiQuoter
   , quoteType = undefined
   }
 
+-- Qualified type
+qualify :: T.Text -> T.Text
+qualify t = t <> "." <> t
+
 -- Take list of external types used in message
 externalTypes :: MsgDefinition -> [TypeQ]
 externalTypes msg =
-    conT . mkName . T.unpack <$> catMaybes (go <$> msg)
+    conT . mkName . T.unpack . qualify  <$> catMaybes (go <$> msg)
   where
     go (Variable (Custom t, _))                = Just t
     go (Variable (Array (Custom t), _))        = Just t
@@ -49,7 +56,7 @@ externalTypes msg =
 -- Field to Type converter
 typeQ :: FieldType -> TypeQ
 typeQ (Simple t)       = conT $ mkName $ mkFlatType t
-typeQ (Custom t)       = conT $ mkName $ T.unpack t
+typeQ (Custom t)       = conT $ mkName $ T.unpack $ qualify t
 typeQ (Array t)        = appT (conT $ mkName "ROSArray") (typeQ t)
 typeQ (FixedArray l t) = appT (appT (conT $ mkName "ROSFixedArray") (typeQ t))
                               (litT $ numTyLit $ fromIntegral l)
@@ -91,9 +98,19 @@ mkFlatType t = case t of
     RUInt64   -> "W.Word64"
     RFloat32  -> "P.Float"
     RFloat64  -> "P.Double"
-    RString   -> "P.String"
+    RString   -> "BS.ByteString"
     RDuration -> "ROSDuration"
     RTime     -> "ROSTime"
+
+-- Default value of field
+defValue :: FieldDefinition -> Maybe ExpQ
+defValue (Constant _ _) = Nothing
+defValue (Variable (Simple t, _)) = Just $
+    case t of
+        RBool     -> [|False|]
+        RString   -> [|""|]
+        _         -> [|def|]
+defValue (Variable _) = Just [|def|]
 
 -- Field definition to record var converter
 fieldQ :: FieldDefinition -> Maybe VarStrictTypeQ
@@ -104,36 +121,27 @@ fieldQ (Variable (typ, name)) = Just $ varStrictType recName recType
 
 -- Generate the getDigest Message class implementation 
 mkGetDigest :: MsgDefinition -> DecQ
-mkGetDigest msg = funD (mkName "getDigest") [digest]
+mkGetDigest msg =
+    funD' "getDigest" [wildP] [| md5 (LBS.pack $(appsE source)) |]
   where
-    digest      = clause [wildP] (normalB digestE) []
-    digestE     = [| md5 (LBS.pack $(source)) |]
-    source      = appsE $ [[|printf|], stringE src] ++ deps
-    src         = unpack $ toLazyText $ render' (const "%s") msg
-    deps        = depDigest <$> externalTypes msg
+    source      = ([|printf $(stringE (render msg))|]
+                : (depDigest <$> externalTypes msg))
     depDigest t = [|show (getDigest (undefined :: $(t)))|]
+    render      = unpack . toLazyText . render' (const "%s")
 
 -- Generate the getType Message class implementation 
 mkGetType :: DecQ
 mkGetType = do
     l_mod <- loc_module <$> location
-    let typeString = clause [wildP] (normalB (stringE msgType)) []
-        msgType = let [m, p] = fmap (drop 1) $ take 2 $
-                           reverse $ groupBy (const (/= '.')) l_mod
+    let msgType = let [m, p] = fmap (drop 1) $ take 2 $
+                               reverse $ groupBy (const (/= '.')) l_mod
                    in fmap toLower p ++ "/" ++ m
-    funD (mkName "getType") [typeString]
-
--- Generate def method of Default instance
-mkDef :: Name -> [a] -> DecQ
-mkDef name recs = funD defName [def] 
-  where def = clause [] (normalB (foldl appE (conE name) recsDef)) []
-        defName = mkName "def"
-        recsDef = (const (varE defName)) <$> recs
+    funD' "getType" [wildP] [|msgType|]
 
 -- Lens signature
-lensSig :: Name -> TypeQ -> TypeQ -> DecQ
-lensSig lensName a b =
-    sigD lensName [t|forall f. Functor f => ($b -> f $b) -> $a -> f $a|]
+lensSig :: String -> TypeQ -> TypeQ -> DecQ
+lensSig name a b = sigD (mkName name)
+    [t|forall f. Functor f => ($b -> f $b) -> $a -> f $a|]
 
 -- Given a record field name,
 -- produces a single function declaration:
@@ -143,13 +151,11 @@ lensSig lensName a b =
 deriveLens :: Name -> FieldDefinition -> [DecQ]
 deriveLens _ (Constant _ _) = []
 deriveLens dataName (Variable (typ, name)) =
-    [ lensSig lensName (conT dataName) (typeQ typ)
-    , funD lensName [defLine]]
+    [ lensSig (T.unpack name) (conT dataName) (typeQ typ)
+    , funD' (T.unpack name) pats body]
   where a = mkName "a"
         f = mkName "f"
-        lensName  = mkName (T.unpack name) 
         fieldName = mkName ('_' : T.unpack name) 
-        defLine   = clause pats (normalB body) []
         pats = [varP f, varP a]
         body = [| (\x -> $(record a fieldName [|x|]))
                   <$> $(appE (varE f) (appE (varE fieldName) (varE a)))
@@ -160,6 +166,10 @@ deriveLens dataName (Variable (typ, name)) =
 instanceD' :: Name -> TypeQ -> [DecQ] -> DecQ
 instanceD' name insType insDecs =
     instanceD (cxt []) (appT insType (conT name)) insDecs
+
+-- |Simple function declaration
+funD' :: String -> [PatQ] -> ExpQ -> DecQ
+funD' name p f = funD (mkName name) [clause p (normalB f) []]
 
 -- |Lenses declarations
 mkLenses :: Name -> MsgDefinition -> [DecQ]
@@ -189,11 +199,11 @@ mkBinary name _ = pure $
 -- |Default instance declaration
 mkDefault :: Name -> MsgDefinition -> [DecQ]
 mkDefault name msg = pure $
-    instanceD' name defaultT [mkDef name recordList]
+    instanceD' name defaultT [defFun]
   where
-    recordList = catMaybes (fieldQ <$> fields)
-    defaultT   = conT (mkName "Default")
-    fields     = sanitizeField <$> msg
+    defaultT = conT (mkName "Default")
+    defaults = catMaybes (defValue . sanitizeField <$> msg)
+    defFun   = funD' "def" [] $ appsE (conE name : defaults)
 
 -- |Message instance declaration
 mkMessage :: Name -> MsgDefinition -> [DecQ]
@@ -210,22 +220,15 @@ mkStamped name msg | hasHeader msg = pure go
     hasHeader [Variable (Custom "Header", _), _] = True
     hasHeader _ = False
 
-    lensE f    = [|$(dyn "header") . $(dyn f)|]
-    seqLensE   = lensE "seq"
-    stampLensE = lensE "stamp"
-    frameLensE = lensE "frame_id"
+    seqL    = dyn "Header.seq"
+    stampL  = dyn "Header.stamp"
+    frameL  = dyn "Header.frame_id"
+    headerL = dyn "header"
 
-    mkGetSequence = funD (mkName "getSequence") [
-        clause [] (normalB (appE (dyn "view") seqLensE)) []]
-
-    mkSetSequence = funD (mkName "setSequence") [
-        clause [] (normalB (appE (dyn "set") seqLensE)) []]
-
-    mkGetStamp = funD (mkName "getStamp") [
-        clause [] (normalB (appE (dyn "view") stampLensE)) []]
-
-    mkGetFrame = funD (mkName "getFrame") [
-        clause [] (normalB (appE (dyn "view") frameLensE)) []]
+    mkSetSequence = funD' "setSequence" [] [|L.set  ($headerL . $seqL)|]
+    mkGetSequence = funD' "getSequence" [] [|L.view ($headerL . $seqL)|]
+    mkGetStamp    = funD' "getStamp"    [] [|L.view ($headerL . $stampL)|]
+    mkGetFrame    = funD' "getFrame"    [] [|L.view ($headerL . $frameL)|]
 
     stampedT = conT (mkName "Stamped")
 
@@ -245,10 +248,10 @@ quoteMsgDec txt = do
       , mkStamped
       , mkLenses
       ]
-  where Done _ msg = P.parse P.rosmsg (pack txt)
+  where Done _ msg = Parser.parse Parser.rosmsg (pack txt)
         mkDataName = mkName . drop 1 . last . groupBy (const isAlphaNum)
         msgRun n   = ($ (n, msg)) . uncurry
 
 quoteMsgExp :: String -> ExpQ
 quoteMsgExp txt = stringE (show msg)
-  where Done _ msg = P.parse P.rosmsg (pack txt)
+  where Done _ msg = Parser.parse Parser.rosmsg (pack txt)

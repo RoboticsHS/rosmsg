@@ -25,6 +25,7 @@ library
                      , pureMD5              >= 2.1    && < 3
                      , attoparsec           >= 0.13   && < 1
                      , bytestring           >= 0.10   && < 1
+                     , lens-family          >= 1.2    && < 2
                      , data-default         >= 0.5    && < 1
                      , template-haskell     >= 2.10   && < 3
 
