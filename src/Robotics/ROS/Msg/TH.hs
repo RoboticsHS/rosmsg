@@ -57,9 +57,9 @@ externalTypes msg =
 typeQ :: FieldType -> TypeQ
 typeQ (Simple t)       = conT $ mkName $ mkFlatType t
 typeQ (Custom t)       = conT $ mkName $ T.unpack $ qualify t
-typeQ (Array t)        = appT (conT $ mkName "ROSArray") (typeQ t)
-typeQ (FixedArray l t) = appT (appT (conT $ mkName "ROSFixedArray") (typeQ t))
-                              (litT $ numTyLit $ fromIntegral l)
+typeQ (Array t)        = [t|ROSArray $(typeQ t)|]
+typeQ (FixedArray l t) = [t|ROSFixedArray $arrSize $(typeQ t)|]
+  where arrSize = litT $ numTyLit $ fromIntegral l
 
 -- Ensure that field and constant names are valid Haskell identifiers
 -- and do not coincide with Haskell reserved words.
