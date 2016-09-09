@@ -39,14 +39,18 @@ rosmsg = QuasiQuoter
   , quoteType = undefined
   }
 
--- Qualified type
-qualify :: T.Text -> T.Text
-qualify t = t <> "." <> t
+customType :: T.Text -> TypeQ
+customType = conT . mkName . T.unpack . qualify . pkgInTypeHook
+  where -- Some messages (e.g. geometry_msgs/Inertia in `com` field)
+        -- contains package name in field type declarations
+        -- it's too strange but exits now, this fix drop
+        -- package name from type declaration
+        pkgInTypeHook = last . T.split (== '/')
+        qualify t     = t <> "." <> t
 
 -- Take list of external types used in message
 externalTypes :: MsgDefinition -> [TypeQ]
-externalTypes msg =
-    conT . mkName . T.unpack . qualify  <$> catMaybes (go <$> msg)
+externalTypes msg = customType <$> catMaybes (go <$> msg)
   where
     go (Variable (Custom t, _))                = Just t
     go (Variable (Array (Custom t), _))        = Just t
@@ -56,7 +60,7 @@ externalTypes msg =
 -- Field to Type converter
 typeQ :: FieldType -> TypeQ
 typeQ (Simple t)       = conT $ mkName $ mkFlatType t
-typeQ (Custom t)       = conT $ mkName $ T.unpack $ qualify t
+typeQ (Custom t)       = customType t
 typeQ (Array t)        = [t|ROSArray $(typeQ t)|]
 typeQ (FixedArray l t) = [t|ROSFixedArray $arrSize $(typeQ t)|]
   where arrSize = litT $ numTyLit $ fromIntegral l
