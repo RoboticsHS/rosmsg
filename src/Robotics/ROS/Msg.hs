@@ -7,6 +7,7 @@ module Robotics.ROS.Msg
   ) where
 
 import Data.Digest.Pure.MD5 (MD5Digest) 
+import Data.ByteString (ByteString)
 import Data.Binary (Binary)
 import Data.Word (Word32)
 import Data.Text (Text)
@@ -24,4 +25,4 @@ class Message a => Stamped a where
     getSequence :: a -> Word32
     setSequence :: Word32 -> a -> a
     getStamp    :: a -> ROSTime
-    getFrame    :: a -> Text
+    getFrame    :: a -> ByteString
