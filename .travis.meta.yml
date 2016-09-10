@@ -5,7 +5,19 @@ env:
   - GHCVER=7.10.3 CABALVER=1.22 PEDANTIC=YES
   - GHCVER=8.0.1  CABALVER=1.24 PEDANTIC=YES
   - GHCVER=head   CABALVER=1.24 PEDANTIC=YES
-#  - STACK=YES                   PEDANTIC=YES
+  - STACK=YES
+
+# Caching so the next build will be fast too.
+cache:
+  directories:
+    - $HOME/.stack
+
+before_install:
+# Download and unpack the stack executable
+  - if [ $STACK ]; then mkdir -p ~/.local/bin; export PATH=$HOME/.local/bin:$PATH; travis_retry curl -L https://www.stackage.org/stack/linux-x86_64 | tar xz --wildcards --strip-components=1 -C ~/.local/bin '*/stack'; exit 0; fi
+
+script:
+  - if [ $STACK ]; then stack --no-terminal --install-ghc test && exit $?; fi
 
 matrix:
   fast_finish: true
