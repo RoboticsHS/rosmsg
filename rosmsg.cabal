@@ -1,5 +1,5 @@
 name:                rosmsg
-version:             0.4.3.2
+version:             0.4.3.3
 synopsis:            ROS message parser, render, TH
 description:         Please see README.md
 homepage:            https://github.com/RoboticsHS/rosmsg#readme
@@ -27,7 +27,7 @@ library
                      , bytestring           >= 0.10   && < 1
                      , lens-family          >= 1.2    && < 2
                      , data-default         >= 0.5    && < 1
-                     , template-haskell     >= 2.10   && < 3
+                     , template-haskell     >= 2.10   && < 2.11
 
   other-modules:       Robotics.ROS.Msg.ROSArray
   default-language:    Haskell2010
