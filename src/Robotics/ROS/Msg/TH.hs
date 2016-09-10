@@ -10,6 +10,7 @@
 -- Template Haskell driven code generator from ROS message language
 -- to Haskell native representation.
 --
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE KindSignatures #-}
@@ -189,6 +190,15 @@ instanceD' :: Name -> TypeQ -> [DecQ] -> DecQ
 instanceD' name insType insDecs =
     instanceD (cxt []) (appT insType (conT name)) insDecs
 
+-- | Simple data type declaration with one constructor
+dataD' :: Name -> ConQ -> [Name] -> DecQ
+dataD' name rec derive =
+#if __GLASGOW_HASKELL__ < 800
+    dataD (cxt []) name [] [rec] derive
+#else
+    dataD (cxt []) name [] Nothing [rec] $ cxt (conT <$> derive)
+#endif
+
 -- | Simple function declaration
 funD' :: String -> [PatQ] -> ExpQ -> DecQ
 funD' name p f = funD (mkName name) [clause p (normalB f) []]
@@ -201,7 +211,7 @@ mkLenses name msg =
 -- | Data type declaration
 mkData :: Name -> MsgDefinition -> [DecQ]
 mkData name msg = pure $
-    dataD (cxt []) name [] [recs] derivingD
+    dataD' name recs derivingD
   where
     fields     = sanitizeField <$> msg
     recs       = recC name (catMaybes (fieldQ <$> fields))
