@@ -13,17 +13,28 @@ cache:
   directories:
     - $HOME/.stack
 
+matrix:
+  include:
+    - env: GHCVER=7.10.3
+      addons: {apt: {packages: [ghc-7.10.3], sources: [hvr-ghc]}}
+    - env: GHCVER=8.0.1
+      addons: {apt: {packages: [ghc-8.0.1], sources: [hvr-ghc]}}
+    - env: GHCVER=head
+      addons: {apt: {packages: [ghc-head], sources: [hvr-ghc]}}
+  allow_failures:
+    - env: GHCVER=head
+
 before_install:
   - mkdir -p ~/.local/bin
-  - export PATH=~/.local/bin:$PATH
+  - export PATH=~/.local/bin:/opt/ghc/$GHCVER/bin:$PATH
   - travis_retry curl -L https://www.stackage.org/stack/linux-x86_64 | tar xz --wildcards --strip-components=1 -C ~/.local/bin '*/stack'
   - chmod a+x ~/.local/bin/stack
 
 install:
-  - stack +RTS -N2 -RTS setup
-  - stack +RTS -N2 -RTS build --only-snapshot
+  - stack -j2 setup --no-terminal --skip-ghc-check
+  - stack -j2 build --no-terminal --skip-ghc-check --only-snapshot
 
 script:
   - git --version
   - stack --version
-  - stack +RTS -N2 -RTS build --test --haddock --no-haddock-deps
+  - stack -j2 build --test --haddock --no-haddock-deps --skip-ghc-check --no-terminal
