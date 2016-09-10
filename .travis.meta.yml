@@ -1,10 +1,11 @@
 language: haskell-multi-ghc
 
 env:
-  - GHCVER=7.8.4  CABALVER=1.18
-  - GHCVER=7.10.1 CABALVER=1.22
-  - GHCVER=8.0.1  CABALVER=1.24
-  - GHCVER=head   CABALVER=1.24
+  - GHCVER=7.8.4  CABALVER=1.18 PEDANTIC=YES
+  - GHCVER=7.10.3 CABALVER=1.22 PEDANTIC=YES
+  - GHCVER=8.0.1  CABALVER=1.24 PEDANTIC=YES
+  - GHCVER=head   CABALVER=1.24 PEDANTIC=YES
+#  - STACK=YES                   PEDANTIC=YES
 
 matrix:
   fast_finish: true
