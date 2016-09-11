@@ -114,7 +114,7 @@ defField :: FieldDefinition -> Maybe ExpQ
 defField (Constant _ _)    = Nothing
 defField (Variable (a, _)) = Just (defValue a)
   where defValue :: FieldType -> ExpQ
-        defValue (Array t)        = [|ROSArray mempty|]
+        defValue (Array _)        = [|ROSArray mempty|]
         defValue (FixedArray l t) = [|ROSFixedArray (replicate l $(defValue t))|]
         defValue (Simple RBool)   = [|False|]
         defValue (Simple RString) = [|""|]
