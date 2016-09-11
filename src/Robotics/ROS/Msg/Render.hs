@@ -12,7 +12,7 @@
 module Robotics.ROS.Msg.Render (
   -- * Lazy Text builder
     render
-  -- * Stric Text render
+  -- * Strict Text render
   , renderT
   ) where
 
