@@ -10,13 +10,15 @@
 -- The ROS message language builder from abstract message definition.
 --
 module Robotics.ROS.Msg.Render (
-  -- * Create lazy text builder from message definition
+  -- * Lazy Text builder
     render
-  -- * Create builder with custom type hook
-  , render'
+  -- * Stric Text render
+  , renderT
   ) where
 
-import Data.Text.Lazy.Builder (Builder, fromText, fromString)
+import Data.Text.Lazy.Builder (Builder, fromText,
+                               fromString, toLazyText)
+import Data.Text.Lazy (toStrict)
 import Data.Char (toLower)
 import Data.Monoid ((<>))
 import Data.Text (Text)
@@ -24,28 +26,15 @@ import Data.Text (Text)
 import Robotics.ROS.Msg.Types
 
 -- | Builder creator from 'FieldType'
-rosType :: (Text -> Text) -> FieldType -> Builder
-rosType _ (Simple t) = fromString $ fmap toLower $ drop 1 $ show t 
-rosType u (Custom t) = fromText $ u t
-rosType u (Array t)        = rosType u t <> "[]"
-rosType u (FixedArray l t) = rosType u t <> "[" <> fromString (show l) <> "]"
+rosType :: FieldType -> Builder
+rosType (Simple t)       = fromString $ fmap toLower $ drop 1 $ show t
+rosType (Custom t)       = fromText t
+rosType (Array t)        = rosType t <> "[]"
+rosType (FixedArray l t) = rosType t <> "[" <> fromString (show l) <> "]"
 
--- | Like 'render' by first argument is user type modifier hook
-render' :: (Text -> Text) -> MsgDefinition -> Builder
-render' uType []     = ""
-render' uType msgdef = unlines1 . fmap go . specOrder
-  where specOrder v = filter isConstant v ++ filter (not . isConstant) v
-        unlines1    = foldl1 (\a b -> a <> "\n" <> b)
-
-        go (Constant (typ, name) val) = rosType uType typ <> " " <>
-                                        fromText name <> "=" <> fromText val
-        go (Variable (typ, name)) = rosType uType typ <> " " <> fromText name
-
-        isConstant x = case x of
-            Constant _ _ -> True
-            _ -> False
-
--- | Render formal ROS message definition according to:
+-- | Create lazy text builder from message definition
+--
+-- Render formal ROS message definition according to:
 --
 --     * comments removed
 --
@@ -64,4 +53,19 @@ render' uType msgdef = unlines1 . fmap go . specOrder
 -- originally defined.
 --
 render :: MsgDefinition -> Builder
-render = render' id
+render []     = ""
+render msgdef = unlines1 (go <$> specOrder msgdef)
+  where specOrder v = filter isConstant v ++ filter (not . isConstant) v
+        unlines1    = foldl1 (\a b -> a <> "\n" <> b)
+
+        go (Constant (typ, name) val) = rosType typ <> " " <>
+                                        fromText name <> "=" <> fromText val
+        go (Variable (typ, name)) = rosType typ <> " " <> fromText name
+
+        isConstant x = case x of
+            Constant _ _ -> True
+            _ -> False
+
+-- | Render message definition to 'Text' instantly
+renderT :: MsgDefinition -> Text
+renderT = toStrict . toLazyText . render

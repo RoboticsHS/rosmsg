@@ -21,26 +21,24 @@ module Robotics.ROS.Msg.TH (
   , rosmsgFrom
   ) where
 
-import qualified Data.ByteString.Lazy.Char8 as LBS
 import           Data.Attoparsec.Text.Lazy (Result(..))
-import           Data.Text.Lazy.Builder (toLazyText)
 import           Data.Char (isAlphaNum, toLower)
-import           Data.Text.Lazy (pack, unpack)
-import           Data.Digest.Pure.MD5 (md5)
 import           Data.Maybe (catMaybes)
-import           Text.Printf (printf)
+import           Data.Text.Lazy (pack)
 import           Data.List (groupBy)
 import           Data.Default (def)
 import           Data.Monoid ((<>))
 import qualified Lens.Family2 as L
+import           Data.Text (Text)
 import qualified Data.Text as T
 
 import           Language.Haskell.TH.Quote
 import           Language.Haskell.TH
 
 import qualified Robotics.ROS.Msg.Parser as Parser
-import           Robotics.ROS.Msg.Render (render')
+import           Robotics.ROS.Msg.Render (renderT)
 import           Robotics.ROS.Msg.Types
+import           Robotics.ROS.Msg.MD5
 import           Robotics.ROS.Msg
 
 -- | Generate ROS message declarations from .msg file
@@ -58,23 +56,9 @@ rosmsg = QuasiQuoter
   }
 
 -- | Take user type from text type name
-customType :: T.Text -> TypeQ
-customType = conT . mkName . T.unpack . qualify . pkgInTypeHook
-  where -- Some messages (e.g. geometry_msgs/Inertia in `com` field)
-        -- contains package name in field type declarations
-        -- it's too strange but exits now, this fix drop
-        -- package name from type declaration
-        pkgInTypeHook = last . T.split (== '/')
-        qualify t     = t <> "." <> t
-
--- | Take list of external types used in message
-externalTypes :: MsgDefinition -> [TypeQ]
-externalTypes msg = customType <$> catMaybes (go <$> msg)
-  where
-    go (Variable (Custom t, _))                = Just t
-    go (Variable (Array (Custom t), _))        = Just t
-    go (Variable (FixedArray _ (Custom t), _)) = Just t
-    go _ = Nothing
+customType :: Text -> TypeQ
+customType = conT . mkName . T.unpack . qualify
+  where qualify t = t <> "." <> t
 
 -- | Field to Type converter
 typeQ :: FieldType -> TypeQ
@@ -88,12 +72,12 @@ typeQ (FixedArray l t) = [t|ROSFixedArray $arrSize $(typeQ t)|]
 -- and do not coincide with Haskell reserved words.
 sanitizeField :: FieldDefinition -> FieldDefinition
 sanitizeField (Constant (a, b) c) = Constant (a, sanitize b) c
-sanitizeField (Variable (a, b))   = Variable (a, sanitize b) 
+sanitizeField (Variable (a, b))   = Variable (a, sanitize b)
 
 -- | Sanitize identifier for valid Haskell
-sanitize :: T.Text -> T.Text
+sanitize :: Text -> Text
 sanitize x | isKeyword x = T.cons '_' x
-           | otherwise   = x
+           | otherwise   = T.toLower (T.take 1 x) <> T.drop 1 x
   where isKeyword = flip elem [ "as", "case", "of", "class"
                               , "data", "family", "instance"
                               , "default", "deriving", "do"
@@ -126,14 +110,15 @@ mkFlatType t = case t of
     RTime     -> "ROSTime"
 
 -- | Default value of field
-defValue :: FieldDefinition -> Maybe ExpQ
-defValue (Constant _ _) = Nothing
-defValue (Variable (Simple t, _)) = Just $
-    case t of
-        RBool     -> [|False|]
-        RString   -> [|""|]
-        _         -> [|def|]
-defValue (Variable _) = Just [|def|]
+defField :: FieldDefinition -> Maybe ExpQ
+defField (Constant _ _)    = Nothing
+defField (Variable (a, _)) = Just (defValue a)
+  where defValue :: FieldType -> ExpQ
+        defValue (Array t)        = [|ROSArray mempty|]
+        defValue (FixedArray l t) = [|ROSFixedArray (replicate l $(defValue t))|]
+        defValue (Simple RBool)   = [|False|]
+        defValue (Simple RString) = [|""|]
+        defValue _                = [|def|]
 
 -- | Field definition to record var converter
 fieldQ :: FieldDefinition -> Maybe VarStrictTypeQ
@@ -142,15 +127,36 @@ fieldQ (Variable (typ, name)) = Just $ varStrictType recName recType
   where recName = mkName ('_' : T.unpack name)
         recType = strictType notStrict (typeQ typ)
 
--- | Generate the getDigest Message class implementation 
+-- | Generate the 'getSource' 'Message' class implementation
+mkGetSource :: MsgDefinition -> DecQ
+mkGetSource msg =
+    funD' "getSource" [wildP] (renderString msg)
+  where
+    renderString = stringE . T.unpack . renderT
+
+-- | Take list of external types and it's TypeQ
+--
+-- XXX: Original python @genmsg@ implementation ignore arrays
+-- for hashing, it seems that types `A` and `A[]` has the same hash.
+--
+userTypes :: MsgDefinition -> [(ExpQ, TypeQ)]
+userTypes = catMaybes . fmap go
+  where
+    textE = stringE . T.unpack
+    go x = case x of
+        Variable (Custom t, _) -> Just (textE t, customType t)
+        Variable (Array (Custom t), _) -> Just (textE (t <> "[]"), customType t)
+        Variable (FixedArray l (Custom t), _) ->
+            Just (textE (t <> "[" <> T.pack (show l) <> "]"), customType t)
+        _ -> Nothing
+
+-- | Generate the 'getDigest' 'Message' class implementation
 mkGetDigest :: MsgDefinition -> DecQ
 mkGetDigest msg =
-    funD' "getDigest" [wildP] [| md5 (LBS.pack $(appsE source)) |]
+    funD' "getDigest" [] [|computeMD5 $digestMap . getSource|]
   where
-    source      = ([|printf $(stringE (render msg))|]
-                : (depDigest <$> externalTypes msg))
-    depDigest t = [|show (getDigest (undefined :: $(t)))|]
-    render      = unpack . toLazyText . render' (const "%s")
+    digestMap = listE (digestPair <$> userTypes msg)
+    digestPair (name, typ) = [|($name, getDigest (undefined :: $typ))|]
 
 -- | Generate the getType Message class implementation 
 mkGetType :: DecQ
@@ -211,10 +217,9 @@ mkLenses name msg =
 -- | Data type declaration
 mkData :: Name -> MsgDefinition -> [DecQ]
 mkData name msg = pure $
-    dataD' name recs derivingD
+    dataD' name (recC name fieldTypes) derivingD
   where
-    fields     = sanitizeField <$> msg
-    recs       = recC name (catMaybes (fieldQ <$> fields))
+    fieldTypes = catMaybes (fieldQ . sanitizeField <$> msg)
     derivingD  = [ mkName "P.Show", mkName "P.Eq", mkName "P.Ord"
                  , mkName "Generic", mkName "Data", mkName "Typeable"
                  ]
@@ -232,13 +237,15 @@ mkDefault name msg = pure $
     instanceD' name defaultT [defFun]
   where
     defaultT = conT (mkName "Default")
-    defaults = catMaybes (defValue . sanitizeField <$> msg)
+    defaults = catMaybes (defField <$> msg)
     defFun   = funD' "def" [] $ appsE (conE name : defaults)
 
 -- | Message instance declaration
 mkMessage :: Name -> MsgDefinition -> [DecQ]
 mkMessage name msg = pure $
-    instanceD' name messageT [mkGetDigest msg, mkGetType]
+    instanceD' name messageT [ mkGetType
+                             , mkGetSource msg
+                             , mkGetDigest msg ]
   where
     messageT = conT (mkName "Message")
 
@@ -247,7 +254,7 @@ mkStamped :: Name -> MsgDefinition -> [DecQ]
 mkStamped name msg | hasHeader msg = pure go
                    | otherwise = []
   where
-    hasHeader [Variable (Custom "Header", _), _] = True
+    hasHeader (Variable (Custom "Header", "header") : _) = True
     hasHeader _ = False
 
     seqL    = dyn "Header.seq"

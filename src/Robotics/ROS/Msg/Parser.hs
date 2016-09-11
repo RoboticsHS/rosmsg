@@ -55,21 +55,26 @@ variableParser = do
     mkField   <- choice [flat, array, fixedArray]
     return (Variable $ mkField typeIdent)
   where
+    -- Build-in type parser
     simpleField = Simple . fst <$> choice (mapM string <$> simpleAssoc)
 
-    customField = Custom <$> identifier
+    -- User type parser
+    customField = Custom . dropPkgSpec <$> identifier
 
-    -- | Flat type is no array
+    -- Drop package spec from user type
+    dropPkgSpec = last . T.split (== '/')
+
+    -- Flat type is no array
     flat = do
         name <- space *> skipSpace *> identifier <* takeLine
         return $ flip (,) name
 
-    -- | Variable lenght array
+    -- Variable lenght array
     array = do
         name <- skipSpace *> string "[]" *> skipSpace *> identifier <* takeLine
         return $ flip (,) name . Array
 
-    -- | Fixed lenght array
+    -- Fixed lenght array
     fixedArray = do
         len <- skipSpace *> char '[' *> decimal <* char ']'
         name <- skipSpace *> identifier <* takeLine

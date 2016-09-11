@@ -16,6 +16,7 @@ library
   hs-source-dirs:      src
   exposed-modules:     Robotics.ROS.Msg
                      , Robotics.ROS.Msg.TH
+                     , Robotics.ROS.Msg.MD5
                      , Robotics.ROS.Msg.Types
                      , Robotics.ROS.Msg.Parser
                      , Robotics.ROS.Msg.Render

@@ -24,6 +24,7 @@ module Robotics.ROS.Msg.Types (
 
 import Data.Word (Word32)
 import Data.Text (Text)
+import Data.Int (Int32)
 
 -- | A variant type describing the simple types 
 -- that may be included in a ROS message.
@@ -73,7 +74,7 @@ data FieldDefinition
 type MsgDefinition = [FieldDefinition]
 
 -- | ROSDuration is a tuple of (seconds, nanoseconds)
-type ROSDuration = (Word32, Word32)
+type ROSDuration = (Int32, Int32)
 
 -- | ROSTime is a tuple of (seconds, nanoseconds)
 type ROSTime = (Word32, Word32)

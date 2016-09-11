@@ -30,11 +30,11 @@
 -- "[Variable (Array (Custom \"Point32\"),\"points\")]"
 --
 module Robotics.ROS.Msg (
-  -- * Message classes 
+  -- * ROS Message classes
     Message(..)
   , Stamped(..)
   -- * Common used types
-  -- ** Array-like types
+  -- ** Array-like
   , ROSFixedArray(..)
   , ROSArray(..)
   -- ** Time description
@@ -42,7 +42,6 @@ module Robotics.ROS.Msg (
   , ROSTime
   ) where
 
-import Data.Digest.Pure.MD5 (MD5Digest) 
 import Data.ByteString (ByteString)
 import Data.Binary (Binary)
 import Data.Word (Word32)
@@ -50,15 +49,20 @@ import Data.Text (Text)
 
 import Robotics.ROS.Msg.ROSArray
 import Robotics.ROS.Msg.Types
+import Robotics.ROS.Msg.MD5
 
 -- | Haskell native type for ROS message language described
 -- data structure. Serialization guaranted by 'Binary' super
 -- class. And no more is needed for transfer over socket.
 class Binary a => Message a where
-    -- | Get MD5 of formal message representation
-    getDigest :: a -> MD5Digest
-    -- | Get message type, e.g. @std_msgs/Char@
+    -- | Get message type string, e.g. @std_msgs/Char@
     getType   :: a -> Text
+
+    -- | Get message source
+    getSource :: a -> Text
+
+    -- | Get recurrent MD5 of message source
+    getDigest :: a -> MD5Digest
 
 -- | Sometime ROS messages have a special @Header@ field.
 -- It used for tracking package sequence, time stamping
@@ -68,9 +72,12 @@ class Binary a => Message a where
 class Message a => Stamped a where
     -- | Get sequence number
     getSequence :: a -> Word32
+
     -- | Set sequence number
     setSequence :: Word32 -> a -> a
+
     -- | Get timestamp of message
     getStamp    :: a -> ROSTime
+
     -- | Get frame of message
     getFrame    :: a -> ByteString
