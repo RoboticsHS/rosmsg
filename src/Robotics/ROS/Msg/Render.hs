@@ -30,13 +30,17 @@ rosType u (Custom t) = fromText $ u t
 rosType u (Array t)        = rosType u t <> "[]"
 rosType u (FixedArray l t) = rosType u t <> "[" <> fromString (show l) <> "]"
 
--- | Like 'render' by first argument is custom type modifier hook
+-- | Like 'render' by first argument is user type modifier hook
 render' :: (Text -> Text) -> MsgDefinition -> Builder
-render' uType = foldl (\a b -> a <> "\n" <> b) mempty . fmap go . sort
-  where sort v = filter isConstant v ++ filter (not . isConstant) v
+render' uType []     = ""
+render' uType msgdef = unlines1 . fmap go . specOrder
+  where specOrder v = filter isConstant v ++ filter (not . isConstant) v
+        unlines1    = foldl1 (\a b -> a <> "\n" <> b)
+
         go (Constant (typ, name) val) = rosType uType typ <> " " <>
                                         fromText name <> "=" <> fromText val
         go (Variable (typ, name)) = rosType uType typ <> " " <> fromText name
+
         isConstant x = case x of
             Constant _ _ -> True
             _ -> False
@@ -51,6 +55,13 @@ render' uType = foldl (\a b -> a <> "\n" <> b) mempty . fmap go . sort
 --
 --     * constants reordered ahead of other declarations
 --       from http://www.ros.org/wiki/ROS/Technical%20Overview
+--
+-- The @genmsg@ python implementation says:
+-- Compute the text used for md5 calculation. MD5 spec states that we
+-- removes comments and non-meaningful whitespace. We also strip
+-- packages names from type names. For convenience sake, constants are
+-- reordered ahead of other declarations, in the order that they were
+-- originally defined.
 --
 render :: MsgDefinition -> Builder
 render = render' id
