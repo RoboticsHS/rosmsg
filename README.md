@@ -1,6 +1,7 @@
 # ROS message parser / render / .hs generator
 
 [![Build Status](https://travis-ci.org/RoboticsHS/rosmsg.svg?branch=master)](https://travis-ci.org/RoboticsHS/rosmsg)
+[![Build status](https://ci.appveyor.com/api/projects/status/cice533o4q04e0yd?svg=true)](https://ci.appveyor.com/project/akru/rosmsg)
 
 ## Install
 
