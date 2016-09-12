@@ -23,16 +23,9 @@
 -- message representation given by parser can be used in TemplateHaskell codegen
 -- for native Haskell structures creation.
 --
--- >>> [rosmsgFrom|/opt/ros/jade/share/std_msgs/msg/Byte.msg|]
--- "[Variable (Simple RByte,\"data\")]"
---
--- >>> [rosmsgFrom|/opt/ros/jade/share/geometry_msgs/msg/Polygon.msg|]
--- "[Variable (Array (Custom \"Point32\"),\"points\")]"
---
 module Robotics.ROS.Msg (
   -- * ROS Message classes
-    Message(..)
-  , Stamped(..)
+    module Robotics.ROS.Msg.Class
   -- * Common used types
   -- ** Array-like
   , ROSFixedArray(..)
@@ -42,42 +35,6 @@ module Robotics.ROS.Msg (
   , ROSTime
   ) where
 
-import Data.ByteString (ByteString)
-import Data.Binary (Binary)
-import Data.Word (Word32)
-import Data.Text (Text)
-
 import Robotics.ROS.Msg.ROSArray
 import Robotics.ROS.Msg.Types
-import Robotics.ROS.Msg.MD5
-
--- | Haskell native type for ROS message language described
--- data structure. Serialization guaranted by 'Binary' super
--- class. And no more is needed for transfer over socket.
-class Binary a => Message a where
-    -- | Get message type string, e.g. @std_msgs/Char@
-    getType   :: a -> Text
-
-    -- | Get message source
-    getSource :: a -> Text
-
-    -- | Get recurrent MD5 of message source
-    getDigest :: a -> MD5Digest
-
--- | Sometime ROS messages have a special @Header@ field.
--- It used for tracking package sequence, time stamping
--- and frame tagging. Headers is frequently field. The
--- 'Stamped' type class lifts header fields on the top
--- of message and abstracting of type.
-class Message a => Stamped a where
-    -- | Get sequence number
-    getSequence :: a -> Word32
-
-    -- | Set sequence number
-    setSequence :: Word32 -> a -> a
-
-    -- | Get timestamp of message
-    getStamp    :: a -> ROSTime
-
-    -- | Get frame of message
-    getFrame    :: a -> ByteString
+import Robotics.ROS.Msg.Class

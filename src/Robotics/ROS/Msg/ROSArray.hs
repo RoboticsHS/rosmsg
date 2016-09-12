@@ -20,9 +20,9 @@ module Robotics.ROS.Msg.ROSArray
   ) where
 
 import GHC.TypeLits (Nat, KnownNat, natVal)
+import Data.Default.Class (Default(..))
 import Data.Binary (Binary(..), Get)
 import Control.Monad (replicateM)
-import Data.Default (Default(..))
 import Data.Typeable (Typeable)
 import Data.Word (Word32)
 import Data.Data (Data)

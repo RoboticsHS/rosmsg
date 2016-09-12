@@ -10,6 +10,12 @@
 -- Template Haskell driven code generator from ROS message language
 -- to Haskell native representation.
 --
+-- >>> [rosmsgFrom|/opt/ros/jade/share/std_msgs/msg/Byte.msg|]
+-- "[Variable (Simple RByte,\"data\")]"
+--
+-- >>> [rosmsgFrom|/opt/ros/jade/share/geometry_msgs/msg/Polygon.msg|]
+-- "[Variable (Array (Custom \"Point32\"),\"points\")]"
+--
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE QuasiQuotes #-}
@@ -21,15 +27,14 @@ module Robotics.ROS.Msg.TH (
   , rosmsgFrom
   ) where
 
-import           Data.Attoparsec.Text.Lazy (Result(..))
 import           Data.Char (isAlphaNum, toLower)
+import           Data.Default.Class (def)
 import           Data.Maybe (catMaybes)
 import           Data.Text.Lazy (pack)
 import           Data.List (groupBy)
-import           Data.Default (def)
 import           Data.Monoid ((<>))
-import qualified Lens.Family2 as L
 import           Data.Text (Text)
+import qualified Lens.Family as L
 import qualified Data.Text as T
 
 import           Language.Haskell.TH.Quote
@@ -286,11 +291,11 @@ quoteMsgDec txt = do
       , mkStamped
       , mkLenses
       ]
-  where Done _ msg = Parser.parse Parser.rosmsg (pack txt)
+  where Parser.Done _ msg = Parser.parse Parser.rosmsg (pack txt)
         mkDataName = mkName . drop 1 . last . groupBy (const isAlphaNum)
         msgRun n   = ($ (n, msg)) . uncurry
 
 -- | Simple parse ROS message and show
 quoteMsgExp :: String -> ExpQ
 quoteMsgExp txt = stringE (show msg)
-  where Done _ msg = Parser.parse Parser.rosmsg (pack txt)
+  where Parser.Done _ msg = Parser.parse Parser.rosmsg (pack txt)
