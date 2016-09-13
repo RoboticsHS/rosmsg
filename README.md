@@ -2,6 +2,10 @@
 
 [![Build Status](https://travis-ci.org/RoboticsHS/rosmsg.svg?branch=master)](https://travis-ci.org/RoboticsHS/rosmsg)
 [![Build status](https://ci.appveyor.com/api/projects/status/cice533o4q04e0yd?svg=true)](https://ci.appveyor.com/project/akru/rosmsg)
+![Hackage](https://img.shields.io/hackage/v/rosmsg.svg)
+![Hackage Dependencies](https://img.shields.io/hackage-deps/v/rosmsg.svg)
+![Haskell Programming Language](https://img.shields.io/badge/language-Haskell-blue.svg)
+![BSD3 License](http://img.shields.io/badge/license-BSD3-brightgreen.svg)
 
 ## Install
 
