@@ -204,10 +204,10 @@ instanceD' name insType insDecs =
 -- | Simple data type declaration with one constructor
 dataD' :: Name -> ConQ -> [Name] -> DecQ
 dataD' name rec derive =
-#if MIN_VERSION_template_haskell(2,10,0)
-    dataD (cxt []) name [] [rec] derive
-#else
+#if MIN_VERSION_template_haskell(2,11,0)
     dataD (cxt []) name [] Nothing [rec] $ cxt (conT <$> derive)
+#else
+    dataD (cxt []) name [] [rec] derive
 #endif
 
 -- | Simple function declaration
