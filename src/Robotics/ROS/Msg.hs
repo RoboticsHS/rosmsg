@@ -24,8 +24,9 @@
 -- for native Haskell structures creation.
 --
 module Robotics.ROS.Msg (
-  -- * ROS Message classes
-    module Robotics.ROS.Msg.Class
+  -- * ROS message classes
+    Message(..)
+  , Stamped(..)
   -- * Common used types
   -- ** Array-like
   , ROSFixedArray(..)
